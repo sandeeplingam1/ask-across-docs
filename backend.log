@@ -1,0 +1,24 @@
+INFO:     Will watch for changes in these directories: ['/home/sandeep.lingam/app-project/Audit-App/backend']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [23699] using WatchFiles
+Failed to send telemetry event ClientStartEvent: capture() takes 1 positional argument but 3 were given
+Failed to send telemetry event ClientStartEvent: capture() takes 1 positional argument but 3 were given
+Failed to send telemetry event ClientStartEvent: capture() takes 1 positional argument but 3 were given
+INFO:     Started server process [23702]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+✅ Database initialized
+✅ Vector store: chromadb
+INFO:     127.0.0.1:50476 - "GET /health HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'app/routes/documents.py', 'app/services/background_tasks.py', 'app/database.py', 'app/config.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [23702]
+👋 Shutting down...
+Failed to send telemetry event ClientStartEvent: capture() takes 1 positional argument but 3 were given
+Failed to send telemetry event ClientStartEvent: capture() takes 1 positional argument but 3 were given
+Failed to send telemetry event ClientStartEvent: capture() takes 1 positional argument but 3 were given
+INFO:     Started server process [23838]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.

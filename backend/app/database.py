@@ -37,8 +37,11 @@ class Document(Base):
     file_size = Column(Integer, nullable=False)
     file_path = Column(String(1000), nullable=True)  # Local or Azure Blob path
     chunk_count = Column(Integer, default=0)
-    status = Column(String(50), default="processing")  # processing, completed, failed
+    status = Column(String(50), default="queued")  # queued, processing, completed, failed
+    progress = Column(Integer, default=0)  # 0-100 percentage
     error_message = Column(Text, nullable=True)
+    processing_started_at = Column(DateTime, nullable=True)
+    processing_completed_at = Column(DateTime, nullable=True)
     uploaded_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
 
 

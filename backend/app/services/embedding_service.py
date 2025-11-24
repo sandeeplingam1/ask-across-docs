@@ -1,5 +1,6 @@
 """Embedding service using Azure OpenAI"""
 from openai import AzureOpenAI
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from app.config import settings
 
 
@@ -8,11 +9,24 @@ class EmbeddingService:
     
     def __init__(self):
         """Initialize Azure OpenAI client"""
-        self.client = AzureOpenAI(
-            api_key=settings.azure_openai_api_key,
-            api_version=settings.azure_openai_api_version,
-            azure_endpoint=settings.azure_openai_endpoint
-        )
+        # Use Azure AD authentication if no API key is provided
+        if settings.azure_openai_api_key:
+            self.client = AzureOpenAI(
+                api_key=settings.azure_openai_api_key,
+                api_version=settings.azure_openai_api_version,
+                azure_endpoint=settings.azure_openai_endpoint
+            )
+        else:
+            # Use DefaultAzureCredential for Azure AD authentication
+            token_provider = get_bearer_token_provider(
+                DefaultAzureCredential(),
+                "https://cognitiveservices.azure.com/.default"
+            )
+            self.client = AzureOpenAI(
+                azure_ad_token_provider=token_provider,
+                api_version=settings.azure_openai_api_version,
+                azure_endpoint=settings.azure_openai_endpoint
+            )
         self.deployment = settings.azure_openai_embedding_deployment
     
     async def embed_text(self, text: str) -> list[float]:

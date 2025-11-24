@@ -1,5 +1,5 @@
 """API routes for document upload and management"""
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from typing import List
@@ -10,10 +10,15 @@ from app.services.document_processor import DocumentProcessor
 from app.services.embedding_service import EmbeddingService
 from app.services.vector_store import get_vector_store
 from app.services.file_storage import get_file_storage
+from app.services.background_tasks import BackgroundDocumentProcessor
 from app.config import settings
 import os
 import aiofiles
 from pathlib import Path
+import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/engagements/{engagement_id}/documents", tags=["documents"])
 
@@ -24,11 +29,13 @@ doc_processor = DocumentProcessor(
 )
 embedding_service = EmbeddingService()
 vector_store = get_vector_store()
+background_processor = BackgroundDocumentProcessor()
 
 
 @router.post("", response_model=MultiUploadResponse)
 async def upload_documents(
     engagement_id: str,
+    background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
     session: AsyncSession = Depends(get_session)
 ):
@@ -87,71 +94,90 @@ async def upload_documents(
                 file_type=doc_processor.get_file_type(file.filename),
                 file_size=file_size,
                 file_path=str(file_path),
-                status="processing"
+                status="queued" if settings.enable_background_processing else "processing"
             )
             
             session.add(document)
             await session.flush()  # Get document ID
             
-            # Process document in background (simplified for now)
-            try:
-                # Extract text with metadata
-                from io import BytesIO
-                extraction_result = doc_processor.extract_with_metadata(BytesIO(file_content), file.filename)
-                text = extraction_result['text']
-                pages_info = extraction_result['pages']
-                
-                # Chunk text with page tracking
-                chunks = doc_processor.chunk_text(
-                    text,
-                    metadata={
-                        "document_id": document.id,
-                        "filename": file.filename,
-                        "engagement_id": engagement_id
-                    },
-                    pages_info=pages_info
-                )
-                
-                if not chunks:
-                    raise ValueError("No text extracted from document")
-                
-                # Generate embeddings
-                chunk_texts = [chunk["text"] for chunk in chunks]
-                embeddings = await embedding_service.embed_batch(chunk_texts)
-                
-                # Store in vector database
-                await vector_store.add_documents(
-                    engagement_id=engagement_id,
+            # Process document
+            if settings.enable_background_processing:
+                # Queue for background processing
+                logger.info(f"Queuing document {document.id} for background processing")
+                background_tasks.add_task(
+                    background_processor.process_document,
                     document_id=document.id,
-                    chunks=chunks,
-                    embeddings=embeddings
+                    engagement_id=engagement_id,
+                    file_content=file_content,
+                    filename=file.filename,
+                    session=session
                 )
-                
-                # Update document status
-                document.status = "completed"
-                document.chunk_count = len(chunks)
                 
                 results.append(UploadStatus(
                     filename=file.filename,
-                    status="success",
-                    message=f"Processed {len(chunks)} chunks",
+                    status="queued",
+                    message="Document queued for processing",
                     document_id=document.id
                 ))
                 successful += 1
-                
-            except Exception as e:
-                document.status = "failed"
-                document.error_message = str(e)
-                
-                results.append(UploadStatus(
-                    filename=file.filename,
-                    status="failed",
-                    message=f"Processing error: {str(e)}",
-                    document_id=document.id
-                ))
-                failed += 1
+            else:
+                # Process synchronously (legacy/dev mode)
+                try:
+                    from io import BytesIO
+                    extraction_result = doc_processor.extract_with_metadata(BytesIO(file_content), file.filename)
+                    text = extraction_result['text']
+                    pages_info = extraction_result['pages']
+                    
+                    chunks = doc_processor.chunk_text(
+                        text,
+                        metadata={
+                            "document_id": document.id,
+                            "filename": file.filename,
+                            "engagement_id": engagement_id
+                        },
+                        pages_info=pages_info
+                    )
+                    
+                    if not chunks:
+                        raise ValueError("No text extracted from document")
+                    
+                    chunk_texts = [chunk["text"] for chunk in chunks]
+                    embeddings = await embedding_service.embed_batch(chunk_texts)
+                    
+                    await vector_store.add_documents(
+                        engagement_id=engagement_id,
+                        document_id=document.id,
+                        chunks=chunks,
+                        embeddings=embeddings
+                    )
+                    
+                    document.status = "completed"
+                    document.chunk_count = len(chunks)
+                    document.progress = 100
+                    
+                    results.append(UploadStatus(
+                        filename=file.filename,
+                        status="success",
+                        message=f"Processed {len(chunks)} chunks",
+                        document_id=document.id
+                    ))
+                    successful += 1
+                    
+                except Exception as e:
+                    logger.error(f"Error processing document {document.id}: {str(e)}")
+                    document.status = "failed"
+                    document.error_message = str(e)
+                    
+                    results.append(UploadStatus(
+                        filename=file.filename,
+                        status="failed",
+                        message=f"Processing error: {str(e)}",
+                        document_id=document.id
+                    ))
+                    failed += 1
             
         except Exception as e:
+            logger.error(f"Upload error for {file.filename}: {str(e)}")
             results.append(UploadStatus(
                 filename=file.filename,
                 status="failed",
