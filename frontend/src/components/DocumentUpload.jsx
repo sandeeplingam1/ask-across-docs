@@ -1,0 +1,151 @@
+import React, { useState, useCallback } from 'react';
+import { useDropzone } from 'react-dropzone';
+import { documentApi } from '../api';
+import { Upload, File, CheckCircle, XCircle, Loader } from 'lucide-react';
+
+export default function DocumentUpload({ engagement, onUploadComplete }) {
+    const [uploading, setUploading] = useState(false);
+    const [uploadResults, setUploadResults] = useState(null);
+    const [progress, setProgress] = useState(0);
+
+    const onDrop = useCallback(async (acceptedFiles) => {
+        if (acceptedFiles.length === 0) return;
+
+        setUploading(true);
+        setUploadResults(null);
+        setProgress(0);
+
+        try {
+            const response = await documentApi.upload(
+                engagement.id,
+                acceptedFiles,
+                (progressEvent) => {
+                    const percentCompleted = Math.round(
+                        (progressEvent.loaded * 100) / progressEvent.total
+                    );
+                    setProgress(percentCompleted);
+                }
+            );
+
+            setUploadResults(response.data);
+            if (onUploadComplete) {
+                onUploadComplete();
+            }
+        } catch (error) {
+            console.error('Upload failed:', error);
+            alert('Upload failed: ' + (error.response?.data?.detail || error.message));
+        } finally {
+            setUploading(false);
+        }
+    }, [engagement.id, onUploadComplete]);
+
+    const { getRootProps, getInputProps, isDragActive } = useDropzone({
+        onDrop,
+        accept: {
+            'application/pdf': ['.pdf'],
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+            'application/msword': ['.doc'],
+            'text/plain': ['.txt'],
+        },
+        multiple: true,
+    });
+
+    return (
+        <div className="space-y-4">
+            <div
+                {...getRootProps()}
+                className={`
+          border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all
+          ${isDragActive ? 'border-primary-500 bg-primary-50' : 'border-gray-300 hover:border-primary-400 bg-white'}
+          ${uploading ? 'cursor-not-allowed opacity-50' : ''}
+        `}
+            >
+                <input {...getInputProps()} disabled={uploading} />
+
+                <Upload
+                    size={48}
+                    className={`mx-auto mb-4 ${isDragActive ? 'text-primary-600' : 'text-gray-400'}`}
+                />
+
+                {uploading ? (
+                    <div>
+                        <Loader className="animate-spin mx-auto mb-2 text-primary-600" size={32} />
+                        <p className="text-lg font-medium text-gray-900">
+                            Uploading and processing documents...
+                        </p>
+                        <div className="mt-4 max-w-md mx-auto">
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                                <div
+                                    className="bg-primary-600 h-2 rounded-full transition-all duration-300"
+                                    style={{ width: `${progress}%` }}
+                                />
+                            </div>
+                            <p className="text-sm text-gray-600 mt-2">{progress}%</p>
+                        </div>
+                    </div>
+                ) : (
+                    <div>
+                        <p className="text-lg font-medium text-gray-900 mb-2">
+                            {isDragActive ? 'Drop files here' : 'Drag & drop documents here'}
+                        </p>
+                        <p className="text-sm text-gray-600 mb-4">
+                            or click to browse
+                        </p>
+                        <p className="text-xs text-gray-500">
+                            Supported: PDF, DOCX, DOC, TXT • Max 100MB per file
+                        </p>
+                    </div>
+                )}
+            </div>
+
+            {uploadResults && (
+                <div className="card">
+                    <h3 className="text-lg font-semibold mb-4">Upload Results</h3>
+
+                    <div className="flex gap-4 mb-4 text-sm">
+                        <span className="text-gray-600">
+                            Total: <strong>{uploadResults.total_files}</strong>
+                        </span>
+                        <span className="text-green-600">
+                            Successful: <strong>{uploadResults.successful}</strong>
+                        </span>
+                        {uploadResults.failed > 0 && (
+                            <span className="text-red-600">
+                                Failed: <strong>{uploadResults.failed}</strong>
+                            </span>
+                        )}
+                    </div>
+
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {uploadResults.results.map((result, index) => (
+                            <div
+                                key={index}
+                                className={`
+                  flex items-start gap-3 p-3 rounded-lg
+                  ${result.status === 'success' ? 'bg-green-50' : 'bg-red-50'}
+                `}
+                            >
+                                {result.status === 'success' ? (
+                                    <CheckCircle className="text-green-600 flex-shrink-0 mt-0.5" size={20} />
+                                ) : (
+                                    <XCircle className="text-red-600 flex-shrink-0 mt-0.5" size={20} />
+                                )}
+
+                                <div className="flex-1 min-w-0">
+                                    <p className="font-medium text-gray-900 truncate">
+                                        {result.filename}
+                                    </p>
+                                    {result.message && (
+                                        <p className={`text-sm ${result.status === 'success' ? 'text-green-700' : 'text-red-700'}`}>
+                                            {result.message}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
