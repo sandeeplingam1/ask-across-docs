@@ -1,13 +1,15 @@
 """API routes for document upload and management"""
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
+from typing import List
 from app.db_session import get_session
 from app.database import Engagement, Document
 from app.models import DocumentResponse, MultiUploadResponse, UploadStatus
 from app.services.document_processor import DocumentProcessor
 from app.services.embedding_service import EmbeddingService
 from app.services.vector_store import get_vector_store
+from app.services.file_storage import get_file_storage
 from app.config import settings
 import os
 import aiofiles
@@ -70,10 +72,13 @@ async def upload_documents(
                 failed += 1
                 continue
             
-            # Save file to disk
-            file_path = upload_dir / file.filename
-            async with aiofiles.open(file_path, 'wb') as f:
-                await f.write(file_content)
+            # Save file using storage service
+            file_storage = get_file_storage()
+            file_path = await file_storage.save_file(
+                file_content,
+                engagement_id,
+                file.filename
+            )
             
             # Create document record
             document = Document(
