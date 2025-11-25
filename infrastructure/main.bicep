@@ -13,6 +13,24 @@ param appName string = 'auditapp'
 @description('Unique suffix for globally unique names')
 param uniqueSuffix string = uniqueString(resourceGroup().id)
 
+@description('Use existing AI Search service instead of creating new')
+param useExistingAISearch bool = false
+
+@description('Existing AI Search service name (if useExistingAISearch is true)')
+param existingAISearchName string = ''
+
+@description('Existing AI Search resource group (if useExistingAISearch is true)')
+param existingAISearchRG string = ''
+
+@description('Use existing Storage Account instead of creating new')
+param useExistingStorage bool = false
+
+@description('Existing Storage Account name (if useExistingStorage is true)')
+param existingStorageAccountName string = ''
+
+@description('Existing Storage Account resource group (if useExistingStorage is true)')
+param existingStorageAccountRG string = ''
+
 // Variables
 var resourcePrefix = '${appName}-${environment}'
 var tags = {
@@ -64,7 +82,7 @@ resource sqlFirewallRule 'Microsoft.Sql/servers/firewallRules@2023-02-01-preview
 // ===================================
 // Azure Storage Account
 // ===================================
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = if (!useExistingStorage) {
   name: '${replace(resourcePrefix, '-', '')}st${uniqueSuffix}'
   location: location
   tags: tags
@@ -79,35 +97,44 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   }
 }
 
+// Reference to existing storage account
+resource existingStorageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' existing = if (useExistingStorage) {
+  name: existingStorageAccountName
+  scope: resourceGroup(existingStorageAccountRG)
+}
+
 // Blob container for documents
-resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-01-01' = {
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-01-01' = if (!useExistingStorage) {
   parent: storageAccount
   name: 'default'
 }
 
-resource documentsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+resource documentsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = if (!useExistingStorage) {
   parent: blobService
-  name: 'audit-documents'
+  name: 'audit-${environment}-documents'
   properties: {
     publicAccess: 'None'
   }
 }
 
 // Queue for background processing
-resource queueService 'Microsoft.Storage/storageAccounts/queueServices@2023-01-01' = {
+resource queueService 'Microsoft.Storage/storageAccounts/queueServices@2023-01-01' = if (!useExistingStorage) {
   parent: storageAccount
   name: 'default'
 }
 
-resource processingQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-01-01' = {
+resource processingQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-01-01' = if (!useExistingStorage) {
   parent: queueService
-  name: 'document-processing'
+  name: 'audit-${environment}-processing'
+  properties: {}
 }
+
+// Note: If using existing storage, containers and queues must be created manually or via deployment script
 
 // ===================================
 // Azure AI Search
 // ===================================
-resource searchService 'Microsoft.Search/searchServices@2023-11-01' = {
+resource searchService 'Microsoft.Search/searchServices@2023-11-01' = if (!useExistingAISearch) {
   name: '${resourcePrefix}-search-${uniqueSuffix}'
   location: location
   tags: tags
@@ -120,6 +147,12 @@ resource searchService 'Microsoft.Search/searchServices@2023-11-01' = {
     hostingMode: 'default'
     publicNetworkAccess: 'enabled'
   }
+}
+
+// Reference to existing AI Search service
+resource existingSearchService 'Microsoft.Search/searchServices@2023-11-01' existing = if (useExistingAISearch) {
+  name: existingAISearchName
+  scope: resourceGroup(existingAISearchRG)
 }
 
 // ===================================
@@ -227,11 +260,11 @@ resource containerAppEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
 output sqlServerName string = sqlServer.name
 output sqlDatabaseName string = sqlDatabase.name
 output sqlConnectionString string = 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Initial Catalog=${sqlDatabase.name};Persist Security Info=False;User ID=sqladmin;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
-output storageAccountName string = storageAccount.name
-output storageConnectionString string = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=core.windows.net'
-output searchServiceName string = searchService.name
-output searchEndpoint string = 'https://${searchService.name}.search.windows.net'
-output searchApiKey string = searchService.listAdminKeys().primaryKey
+output storageAccountName string = useExistingStorage ? existingStorageAccount.name : storageAccount.name
+output storageConnectionString string = useExistingStorage ? 'DefaultEndpointsProtocol=https;AccountName=${existingStorageAccount.name};AccountKey=${existingStorageAccount.listKeys().keys[0].value};EndpointSuffix=core.windows.net' : 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=core.windows.net'
+output searchServiceName string = useExistingAISearch ? existingSearchService.name : searchService.name
+output searchEndpoint string = useExistingAISearch ? 'https://${existingSearchService.name}.search.windows.net' : 'https://${searchService.name}.search.windows.net'
+output searchApiKey string = useExistingAISearch ? existingSearchService.listAdminKeys().primaryKey : searchService.listAdminKeys().primaryKey
 output redisHostName string = redis.properties.hostName
 output redisConnectionString string = '${redis.properties.hostName}:6380,password=${redis.listKeys().primaryKey},ssl=True,abortConnect=False'
 output keyVaultName string = keyVault.name

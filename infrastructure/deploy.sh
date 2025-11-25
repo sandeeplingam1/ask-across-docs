@@ -20,6 +20,11 @@ LOCATION="${2:-eastus}"
 APP_NAME="auditapp"
 RESOURCE_GROUP="${APP_NAME}-${ENVIRONMENT}-rg"
 
+# Existing resources configuration (for staging)
+EXISTING_RG="rg-saga-dev"
+EXISTING_AI_SEARCH="gptkb-obghpsbi63abq"
+EXISTING_STORAGE="stobghpsbi63abq"
+
 echo -e "${YELLOW}Configuration:${NC}"
 echo "  Environment: $ENVIRONMENT"
 echo "  Location: $LOCATION"
@@ -59,16 +64,62 @@ echo ""
 
 # Deploy Bicep template
 DEPLOYMENT_NAME="${APP_NAME}-deployment-$(date +%Y%m%d-%H%M%S)"
-az deployment group create \
-    --name "$DEPLOYMENT_NAME" \
-    --resource-group "$RESOURCE_GROUP" \
-    --template-file main.bicep \
-    --parameters environment="$ENVIRONMENT" appName="$APP_NAME" \
-    --output table
+
+if [ "$ENVIRONMENT" = "staging" ]; then
+    echo -e "${YELLOW}Reusing existing resources from $EXISTING_RG:${NC}"
+    echo "  - AI Search: $EXISTING_AI_SEARCH"
+    echo "  - Storage Account: $EXISTING_STORAGE"
+    echo ""
+    
+    az deployment group create \
+        --name "$DEPLOYMENT_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --template-file main.bicep \
+        --parameters environment="$ENVIRONMENT" appName="$APP_NAME" \
+                     useExistingAISearch=true \
+                     existingAISearchName="$EXISTING_AI_SEARCH" \
+                     existingAISearchRG="$EXISTING_RG" \
+                     useExistingStorage=true \
+                     existingStorageAccountName="$EXISTING_STORAGE" \
+                     existingStorageAccountRG="$EXISTING_RG" \
+        --output table
+else
+    echo -e "${YELLOW}Creating all new resources for production${NC}"
+    echo ""
+    
+    az deployment group create \
+        --name "$DEPLOYMENT_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --template-file main.bicep \
+        --parameters environment="$ENVIRONMENT" appName="$APP_NAME" \
+        --output table
+fi
 
 echo ""
 echo -e "${GREEN}Deployment completed!${NC}"
 echo ""
+
+# Create containers and queues in existing storage if using existing storage
+if [ "$ENVIRONMENT" = "staging" ]; then
+    echo -e "${YELLOW}Setting up containers and queues in existing storage...${NC}"
+    
+    # Create blob container
+    az storage container create \
+        --name "audit-${ENVIRONMENT}-documents" \
+        --account-name "$EXISTING_STORAGE" \
+        --auth-mode login \
+        --only-show-errors || echo "Container may already exist"
+    
+    # Create queue
+    az storage queue create \
+        --name "audit-${ENVIRONMENT}-processing" \
+        --account-name "$EXISTING_STORAGE" \
+        --auth-mode login \
+        --only-show-errors || echo "Queue may already exist"
+    
+    echo -e "${GREEN}Storage setup completed${NC}"
+    echo ""
+fi
 
 # Get outputs
 echo -e "${YELLOW}Getting deployment outputs...${NC}"
@@ -115,14 +166,14 @@ AZURE_OPENAI_CHAT_DEPLOYMENT=gpt-4.1-mini
 VECTOR_DB_TYPE=azure_search
 AZURE_SEARCH_ENDPOINT=$(az deployment group show --name "$DEPLOYMENT_NAME" --resource-group "$RESOURCE_GROUP" --query properties.outputs.searchEndpoint.value -o tsv)
 AZURE_SEARCH_API_KEY=$(az deployment group show --name "$DEPLOYMENT_NAME" --resource-group "$RESOURCE_GROUP" --query properties.outputs.searchApiKey.value -o tsv)
-AZURE_SEARCH_INDEX_NAME=documents
+AZURE_SEARCH_INDEX_NAME=audit-${ENVIRONMENT}-documents
 
 # Database
 DATABASE_URL=$(az deployment group show --name "$DEPLOYMENT_NAME" --resource-group "$RESOURCE_GROUP" --query properties.outputs.sqlConnectionString.value -o tsv)
 
 # Storage
 AZURE_STORAGE_CONNECTION_STRING=$(az deployment group show --name "$DEPLOYMENT_NAME" --resource-group "$RESOURCE_GROUP" --query properties.outputs.storageConnectionString.value -o tsv)
-AZURE_STORAGE_CONTAINER_NAME=audit-documents
+AZURE_STORAGE_CONTAINER_NAME=audit-${ENVIRONMENT}-documents
 
 # Redis
 REDIS_URL=$(az deployment group show --name "$DEPLOYMENT_NAME" --resource-group "$RESOURCE_GROUP" --query properties.outputs.redisConnectionString.value -o tsv)
