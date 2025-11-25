@@ -257,39 +257,162 @@ resource containerAppEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
 // ===================================
 // Backend Container App
 // ===================================
-module backendApp 'modules/containerApps.bicep' = {
-  name: 'backend-container-app'
-  params: {
-    location: location
-    environment: environment
-    containerAppsEnvironmentId: containerAppEnv.id
-    containerRegistryName: containerRegistry.name
-    containerRegistryUsername: containerRegistry.listCredentials().username
-    containerRegistryPassword: containerRegistry.listCredentials().passwords[0].value
-    backendImage: 'auditapp-backend:latest'
-    databaseConnectionString: 'mssql+pyodbc://sqladmin:P@ssw0rd123!@${sqlServer.properties.fullyQualifiedDomainName}:1433/${sqlDatabase.name}?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no&Connection+Timeout=30'
-    azureOpenAIEndpoint: 'https://cog-obghpsbi63abq.openai.azure.com/'
-    azureOpenAIEmbeddingDeployment: 'text-embedding-3-large'
-    azureOpenAIChatDeployment: 'gpt-4.1-mini'
-    azureSearchEndpoint: useExistingAISearch ? 'https://${existingSearchService.name}.search.windows.net' : 'https://${searchService.name}.search.windows.net'
-    azureSearchApiKey: useExistingAISearch ? existingSearchService.listAdminKeys().primaryKey : searchService.listAdminKeys().primaryKey
-    azureSearchIndexName: 'audit-${environment}-documents'
-    azureStorageConnectionString: useExistingStorage ? 'DefaultEndpointsProtocol=https;AccountName=${existingStorageAccount.name};AccountKey=${existingStorageAccount.listKeys().keys[0].value};EndpointSuffix=core.windows.net' : 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=core.windows.net'
-    azureStorageContainerName: 'audit-${environment}-documents'
-    redisConnectionString: '${redis.properties.hostName}:6380,password=${redis.listKeys().primaryKey},ssl=True,abortConnect=False'
-    applicationInsightsConnectionString: appInsights.properties.ConnectionString
+resource backendContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
+  name: '${resourcePrefix}-backend'
+  location: location
+  tags: tags
+  properties: {
+    environmentId: containerAppEnv.id
+    configuration: {
+      ingress: {
+        external: true
+        targetPort: 8000
+        transport: 'auto'
+        allowInsecure: false
+      }
+      registries: [
+        {
+          server: containerRegistry.properties.loginServer
+          username: containerRegistry.listCredentials().username
+          passwordSecretRef: 'registry-password'
+        }
+      ]
+      secrets: [
+        {
+          name: 'registry-password'
+          value: containerRegistry.listCredentials().passwords[0].value
+        }
+        {
+          name: 'database-url'
+          value: 'mssql+pyodbc://sqladmin:P@ssw0rd123!@${sqlServer.properties.fullyQualifiedDomainName}:1433/${sqlDatabase.name}?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no&Connection+Timeout=30'
+        }
+        {
+          name: 'azure-search-api-key'
+          value: useExistingAISearch ? existingSearchService.listAdminKeys().primaryKey : searchService.listAdminKeys().primaryKey
+        }
+        {
+          name: 'storage-connection-string'
+          value: useExistingStorage ? 'DefaultEndpointsProtocol=https;AccountName=${existingStorageAccount.name};AccountKey=${existingStorageAccount.listKeys().keys[0].value};EndpointSuffix=core.windows.net' : 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=core.windows.net'
+        }
+        {
+          name: 'redis-connection-string'
+          value: '${redis.properties.hostName}:6380,password=${redis.listKeys().primaryKey},ssl=True,abortConnect=False'
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'backend'
+          image: '${containerRegistry.properties.loginServer}/auditapp-backend:latest'
+          resources: {
+            cpu: json('1.0')
+            memory: '2Gi'
+          }
+          env: [
+            {
+              name: 'ENVIRONMENT'
+              value: environment
+            }
+            {
+              name: 'DATABASE_URL'
+              secretRef: 'database-url'
+            }
+            {
+              name: 'AZURE_OPENAI_ENDPOINT'
+              value: 'https://cog-obghpsbi63abq.openai.azure.com/'
+            }
+            {
+              name: 'AZURE_OPENAI_API_VERSION'
+              value: '2024-02-15-preview'
+            }
+            {
+              name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT'
+              value: 'text-embedding-3-large'
+            }
+            {
+              name: 'AZURE_OPENAI_CHAT_DEPLOYMENT'
+              value: 'gpt-4.1-mini'
+            }
+            {
+              name: 'VECTOR_DB_TYPE'
+              value: 'azure_search'
+            }
+            {
+              name: 'AZURE_SEARCH_ENDPOINT'
+              value: useExistingAISearch ? 'https://${existingSearchService.name}.search.windows.net' : 'https://${searchService.name}.search.windows.net'
+            }
+            {
+              name: 'AZURE_SEARCH_API_KEY'
+              secretRef: 'azure-search-api-key'
+            }
+            {
+              name: 'AZURE_SEARCH_INDEX_NAME'
+              value: 'audit-${environment}-documents'
+            }
+            {
+              name: 'AZURE_STORAGE_CONNECTION_STRING'
+              secretRef: 'storage-connection-string'
+            }
+            {
+              name: 'AZURE_STORAGE_CONTAINER_NAME'
+              value: 'audit-${environment}-documents'
+            }
+            {
+              name: 'REDIS_URL'
+              secretRef: 'redis-connection-string'
+            }
+            {
+              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+              value: appInsights.properties.ConnectionString
+            }
+            {
+              name: 'ENABLE_TELEMETRY'
+              value: 'true'
+            }
+            {
+              name: 'BACKEND_CORS_ORIGINS'
+              value: 'https://${resourcePrefix}-frontend.azurestaticapps.net,http://localhost:5173'
+            }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 1
+        maxReplicas: 3
+      }
+    }
   }
 }
 
 // ===================================
 // Frontend Static Web App
 // ===================================
-module frontendApp 'modules/staticWebApp.bicep' = {
-  name: 'frontend-static-web-app'
-  params: {
-    location: location
-    environment: environment
-    backendUrl: backendApp.outputs.backendUrl
+resource staticWebApp 'Microsoft.Web/staticSites@2023-01-01' = {
+  name: '${resourcePrefix}-frontend'
+  location: location
+  tags: tags
+  sku: {
+    name: 'Free'
+    tier: 'Free'
+  }
+  properties: {
+    repositoryUrl: 'https://github.com/sandeeplingam1/Audit-App'
+    branch: 'main'
+    buildProperties: {
+      appLocation: '/frontend'
+      apiLocation: ''
+      outputLocation: 'dist'
+    }
+  }
+}
+
+// Configure Static Web App settings
+resource staticWebAppSettings 'Microsoft.Web/staticSites/config@2023-01-01' = {
+  parent: staticWebApp
+  name: 'appsettings'
+  properties: {
+    VITE_API_URL: 'https://${backendContainerApp.properties.configuration.ingress.fqdn}'
   }
 }
 
@@ -314,7 +437,7 @@ output containerRegistryLoginServer string = containerRegistry.properties.loginS
 output containerAppsEnvironmentName string = containerAppEnv.name
 
 // Application URLs
-output backendUrl string = backendApp.outputs.backendUrl
-output backendFqdn string = backendApp.outputs.backendFqdn
-output frontendUrl string = frontendApp.outputs.staticWebAppUrl
-output frontendHostname string = frontendApp.outputs.staticWebAppHostname
+output backendUrl string = 'https://${backendContainerApp.properties.configuration.ingress.fqdn}'
+output backendFqdn string = backendContainerApp.properties.configuration.ingress.fqdn
+output frontendUrl string = 'https://${staticWebApp.properties.defaultHostname}'
+output frontendHostname string = staticWebApp.properties.defaultHostname

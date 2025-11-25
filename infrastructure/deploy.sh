@@ -1,10 +1,11 @@
 #!/bin/bash
 
-# Audit App - Azure Infrastructure Deployment Script
+# Audit App - Complete Azure Deployment Script
+# Deploys ALL infrastructure via Bicep (SQL, Redis, ACR, Container Apps Environment, Backend Container App, Static Web App)
 set -e
 
 echo "========================================"
-echo "Audit App - Azure Deployment"
+echo "Audit App - Complete Deployment"
 echo "========================================"
 echo ""
 
@@ -15,12 +16,12 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # Configuration
-ENVIRONMENT="${1:-prod}"
+ENVIRONMENT="${1:-staging}"
 LOCATION="${2:-eastus}"
 APP_NAME="auditapp"
 RESOURCE_GROUP="${APP_NAME}-${ENVIRONMENT}-rg"
 
-# Existing resources configuration (for staging)
+# Existing resources configuration (reusing from rg-saga-dev)
 EXISTING_RG="rg-saga-dev"
 EXISTING_AI_SEARCH="gptkb-obghpsbi63abq"
 EXISTING_STORAGE="stobghpsbi63abq"
@@ -97,6 +98,59 @@ fi
 
 echo ""
 echo -e "${GREEN}Deployment completed!${NC}"
+echo ""
+
+# Get ACR name from deployment
+echo -e "${YELLOW}Building and pushing backend Docker image...${NC}"
+ACR_NAME=$(az deployment group show \
+    --name "$DEPLOYMENT_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --query "properties.outputs.containerRegistryName.value" -o tsv)
+
+echo "  Container Registry: $ACR_NAME"
+
+# Navigate to backend folder
+cd ../backend
+
+# Login to ACR
+echo -e "${YELLOW}Logging in to ACR...${NC}"
+az acr login --name "$ACR_NAME"
+
+# Build and push image
+echo -e "${YELLOW}Building backend image...${NC}"
+docker build -t "${ACR_NAME}.azurecr.io/auditapp-backend:latest" .
+
+echo -e "${YELLOW}Pushing to ACR...${NC}"
+docker push "${ACR_NAME}.azurecr.io/auditapp-backend:latest"
+
+echo -e "${GREEN}✓ Docker image deployed to ACR${NC}"
+cd ../infrastructure
+
+# Update Container App to pull the new image
+echo -e "${YELLOW}Redeploying infrastructure with Docker image...${NC}"
+if [ "$ENVIRONMENT" = "staging" ]; then
+    az deployment group create \
+        --name "${APP_NAME}-update-$(date +%Y%m%d-%H%M%S)" \
+        --resource-group "$RESOURCE_GROUP" \
+        --template-file main.bicep \
+        --parameters environment="$ENVIRONMENT" appName="$APP_NAME" \
+                     useExistingAISearch=true \
+                     existingAISearchName="$EXISTING_AI_SEARCH" \
+                     existingAISearchRG="$EXISTING_RG" \
+                     useExistingStorage=true \
+                     existingStorageAccountName="$EXISTING_STORAGE" \
+                     existingStorageAccountRG="$EXISTING_RG" \
+        --output none
+else
+    az deployment group create \
+        --name "${APP_NAME}-update-$(date +%Y%m%d-%H%M%S)" \
+        --resource-group "$RESOURCE_GROUP" \
+        --template-file main.bicep \
+        --parameters environment="$ENVIRONMENT" appName="$APP_NAME" \
+        --output none
+fi
+
+echo -e "${GREEN}✓ Container App updated${NC}"
 echo ""
 
 # Create containers and queues in existing storage if using existing storage
