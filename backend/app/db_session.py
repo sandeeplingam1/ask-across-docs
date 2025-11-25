@@ -1,25 +1,27 @@
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
 from app.database import Base
 from app.config import settings
 import os
 
 
-# Create async engine
-engine = create_async_engine(
+# Create sync engine (pyodbc is not async)
+engine = create_engine(
     settings.database_url,
     echo=False,
-    future=True
+    pool_pre_ping=True,  # Verify connections before using
+    pool_recycle=3600    # Recycle connections after 1 hour
 )
 
 # Create session factory
-async_session_maker = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine
 )
 
 
-async def init_db():
+def init_db():
     """Initialize database tables"""
     # Create data directories if they don't exist
     os.makedirs("./data", exist_ok=True)
@@ -27,14 +29,13 @@ async def init_db():
         os.makedirs(settings.chromadb_path, exist_ok=True)
     
     # Create tables
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    Base.metadata.create_all(bind=engine)
 
 
-async def get_session() -> AsyncSession:
+def get_session() -> Session:
     """Dependency for getting database session"""
-    async with async_session_maker() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

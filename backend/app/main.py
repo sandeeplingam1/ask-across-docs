@@ -13,7 +13,7 @@ async def lifespan(app: FastAPI):
     # Startup
     print("🚀 Starting Audit App API v1.1.0")
     print(f"📍 Environment: {settings.environment}")
-    await init_db()
+    init_db()  # Sync function now
     print("✅ Database initialized")
     print(f"✅ Vector store: {settings.vector_db_type}")
     print(f"✅ CORS origins: {', '.join(settings.cors_origins_list[:3])}...")
