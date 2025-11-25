@@ -390,7 +390,7 @@ resource backendContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
 // ===================================
 resource staticWebApp 'Microsoft.Web/staticSites@2023-01-01' = {
   name: '${resourcePrefix}-frontend'
-  location: location
+  location: 'eastus2'  // Static Web Apps not available in eastus, using eastus2
   tags: tags
   sku: {
     name: 'Free'
