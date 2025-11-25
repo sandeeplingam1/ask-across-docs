@@ -43,8 +43,8 @@ aiofiles==23.2.1
 httpx==0.26.0
 
 # Monitoring and Logging
-azure-monitor-opentelemetry==1.2.0
-opentelemetry-instrumentation-fastapi==0.41b0
+azure-monitor-opentelemetry>=1.2.0
+opentelemetry-instrumentation-fastapi>=0.42b0
 
 # Testing
 pytest==7.4.4
