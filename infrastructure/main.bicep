@@ -284,7 +284,7 @@ resource backendContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
         }
         {
           name: 'database-url'
-          value: 'mssql+pyodbc://sqladmin:P@ssw0rd123!@${sqlServer.properties.fullyQualifiedDomainName}:1433/${sqlDatabase.name}?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no&Connection+Timeout=30'
+          value: 'mssql+pyodbc://sqladmin:P%40ssw0rd123%21@${sqlServer.properties.fullyQualifiedDomainName}:1433/${sqlDatabase.name}?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no&Connection+Timeout=30'
         }
         {
           name: 'azure-search-api-key'
