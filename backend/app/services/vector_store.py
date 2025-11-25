@@ -212,13 +212,14 @@ class AzureAISearchStore(VectorStore):
                 SimpleField(name="id", type=SearchFieldDataType.String, key=True),
                 SimpleField(name="engagement_id", type=SearchFieldDataType.String, filterable=True),
                 SimpleField(name="document_id", type=SearchFieldDataType.String, filterable=True),
+                SimpleField(name="filename", type=SearchFieldDataType.String, filterable=True),
                 SimpleField(name="chunk_index", type=SearchFieldDataType.Int32),
-                SearchableField(name="text", type=SearchFieldDataType.String),
+                SearchableField(name="content", type=SearchFieldDataType.String),
                 SearchField(
                     name="embedding",
                     type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
                     searchable=True,
-                    vector_search_dimensions=1536,  # ada-002 embedding size
+                    vector_search_dimensions=3072,  # text-embedding-3-large size
                     vector_search_profile_name="default-profile"
                 )
             ]
@@ -264,8 +265,9 @@ class AzureAISearchStore(VectorStore):
                 "id": f"{document_id}_chunk_{i}",
                 "engagement_id": engagement_id,
                 "document_id": document_id,
+                "filename": chunk.get("filename", ""),
                 "chunk_index": chunk["chunk_index"],
-                "text": chunk["text"],
+                "content": chunk["text"],
                 "embedding": embedding
             })
         
@@ -297,8 +299,8 @@ class AzureAISearchStore(VectorStore):
                 "id": result["id"],
                 "document_id": result["document_id"],
                 "chunk_index": result["chunk_index"],
-                "text": result["text"],
-                "similarity_score": result["@search.score"]
+                "text": result.get("content", result.get("text", "")),
+                "score": result["@search.score"]
             })
         
         return search_results

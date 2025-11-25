@@ -180,7 +180,7 @@ resource redis 'Microsoft.Cache/redis@2023-08-01' = {
 // Azure Key Vault
 // ===================================
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
-  name: '${resourcePrefix}-kv-${uniqueSuffix}'
+  name: 'kv-${appName}-${take(uniqueSuffix, 10)}'
   location: location
   tags: tags
   properties: {

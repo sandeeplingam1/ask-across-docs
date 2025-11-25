@@ -60,7 +60,16 @@ class QAService:
             top_k=max_sources
         )
         
-        if not search_results:
+        # Normalize the field names (vector store returns 'score', but we use 'similarity_score')
+        for result in search_results:
+            if 'score' in result and 'similarity_score' not in result:
+                result['similarity_score'] = result['score']
+        
+        # Filter out results with very low similarity scores (below 0.5 threshold)
+        # This prevents irrelevant results for queries like "hi" or "hello"
+        filtered_results = [r for r in search_results if r.get('similarity_score', 0) > 0.5]
+        
+        if not filtered_results:
             return {
                 "answer": "I don't have enough information to answer this question. Please make sure documents have been uploaded to this engagement.",
                 "sources": [],
@@ -69,7 +78,7 @@ class QAService:
         
         # 3. Build context from retrieved chunks
         context_parts = []
-        for i, result in enumerate(search_results):
+        for i, result in enumerate(filtered_results):
             context_parts.append(f"[Source {i+1}]\n{result['text']}")
         
         context = "\n\n".join(context_parts)
@@ -109,17 +118,18 @@ ANSWER:"""
             answer = response.choices[0].message.content
             
             # Determine confidence based on similarity scores
-            avg_score = sum(r["similarity_score"] for r in search_results) / len(search_results)
-            if avg_score > 0.8:
+            avg_score = sum(r["similarity_score"] for r in filtered_results) / len(filtered_results)
+            # Adjusted thresholds: 0.75+ = high, 0.60-0.75 = medium, below 0.60 = low
+            if avg_score >= 0.75:
                 confidence = "high"
-            elif avg_score > 0.6:
+            elif avg_score >= 0.60:
                 confidence = "medium"
             else:
                 confidence = "low"
             
             return {
                 "answer": answer,
-                "sources": search_results,
+                "sources": filtered_results,
                 "confidence": confidence
             }
             
@@ -127,7 +137,7 @@ ANSWER:"""
             print(f"Error calling Azure OpenAI: {e}")
             return {
                 "answer": f"Error generating answer: {str(e)}",
-                "sources": search_results,
+                "sources": filtered_results,
                 "confidence": "low"
             }
     

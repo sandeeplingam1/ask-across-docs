@@ -16,7 +16,7 @@ class Engagement(Base):
     """Engagement/Folder that contains documents"""
     __tablename__ = "engagements"
     
-    id = Column(String, primary_key=True, default=generate_uuid)
+    id = Column(String(36), primary_key=True, default=generate_uuid)  # UUID is 36 chars
     name = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
     client_name = Column(String(200), nullable=True)
@@ -30,10 +30,10 @@ class Document(Base):
     """Document uploaded to an engagement"""
     __tablename__ = "documents"
     
-    id = Column(String, primary_key=True, default=generate_uuid)
-    engagement_id = Column(String, ForeignKey("engagements.id", ondelete="CASCADE"), nullable=False)
+    id = Column(String(36), primary_key=True, default=generate_uuid)  # UUID is 36 chars
+    engagement_id = Column(String(36), ForeignKey("engagements.id", ondelete="CASCADE"), nullable=False)
     filename = Column(String(500), nullable=False)
-    file_type = Column(String(50), nullable=False)
+    file_type = Column(String(100), nullable=False)  # Increased to support long MIME types
     file_size = Column(Integer, nullable=False)
     file_path = Column(String(1000), nullable=True)  # Local or Azure Blob path
     chunk_count = Column(Integer, default=0)
@@ -49,8 +49,8 @@ class QuestionAnswer(Base):
     """Q&A history for engagements"""
     __tablename__ = "question_answers"
     
-    id = Column(String, primary_key=True, default=generate_uuid)
-    engagement_id = Column(String, ForeignKey("engagements.id", ondelete="CASCADE"), nullable=False)
+    id = Column(String(36), primary_key=True, default=generate_uuid)  # UUID is 36 chars
+    engagement_id = Column(String(36), ForeignKey("engagements.id", ondelete="CASCADE"), nullable=False)
     question = Column(Text, nullable=False)
     answer = Column(Text, nullable=False)
     sources = Column(Text, nullable=True)  # JSON string of source chunks

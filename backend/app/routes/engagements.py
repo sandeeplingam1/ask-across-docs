@@ -52,13 +52,23 @@ async def list_engagements(
 ):
     """List all engagements with document counts"""
     # Get engagements with document counts
+    # SQL Server requires all non-aggregated columns in GROUP BY
     query = (
         select(
             Engagement,
             func.count(Document.id).label("document_count")
         )
         .outerjoin(Document, Engagement.id == Document.engagement_id)
-        .group_by(Engagement.id)
+        .group_by(
+            Engagement.id,
+            Engagement.name,
+            Engagement.description,
+            Engagement.client_name,
+            Engagement.start_date,
+            Engagement.end_date,
+            Engagement.created_at,
+            Engagement.updated_at
+        )
         .order_by(Engagement.created_at.desc())
     )
     

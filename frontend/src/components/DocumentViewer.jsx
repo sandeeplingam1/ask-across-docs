@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
-import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
+import mammoth from 'mammoth';
+import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, FileText, Download } from 'lucide-react';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 
@@ -12,8 +13,124 @@ export default function DocumentViewer({ documentId, filename, pageNumber, searc
     const [currentPage, setCurrentPage] = useState(pageNumber || 1);
     const [scale, setScale] = useState(1.0);
     const [loading, setLoading] = useState(true);
+    const [textContent, setTextContent] = useState('');
+    const [docxHtml, setDocxHtml] = useState('');
+    const [error, setError] = useState(null);
+    const contentRef = useRef(null);
 
     const documentUrl = `http://localhost:8000/api/documents/${documentId}/file`;
+    
+    // Determine file type from filename
+    const fileExtension = filename.split('.').pop().toLowerCase();
+    const isPdf = fileExtension === 'pdf';
+    const isTextBased = ['txt', 'md', 'csv', 'json', 'xml'].includes(fileExtension);
+    const isDocx = fileExtension === 'docx';
+    const isOfficeDoc = ['doc', 'xlsx', 'xls', 'pptx', 'ppt'].includes(fileExtension);
+    
+    useEffect(() => {
+        // For DOCX files, convert to HTML with Mammoth
+        if (isDocx) {
+            setLoading(true);
+            setError(null);
+            console.log('Loading DOCX document:', documentUrl);
+            
+            fetch(documentUrl)
+                .then(response => {
+                    console.log('Fetch response:', response.status);
+                    if (!response.ok) throw new Error('Failed to load document');
+                    return response.arrayBuffer();
+                })
+                .then(arrayBuffer => {
+                    console.log('Got arrayBuffer, size:', arrayBuffer.byteLength);
+                    return mammoth.convertToHtml({ arrayBuffer });
+                })
+                .then(result => {
+                    console.log('Mammoth conversion complete, HTML length:', result.value.length);
+                    if (result.messages && result.messages.length > 0) {
+                        console.log('Mammoth messages:', result.messages);
+                    }
+                    setDocxHtml(result.value);
+                    setLoading(false);
+                })
+                .catch(err => {
+                    console.error('Error loading DOCX:', err);
+                    setError(err.message);
+                    setLoading(false);
+                });
+        } else if (isTextBased) {
+            // For text files, fetch directly
+            fetch(documentUrl)
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to load document');
+                    return response.text();
+                })
+                .then(text => {
+                    setTextContent(text);
+                    setLoading(false);
+                })
+                .catch(err => {
+                    setError(err.message);
+                    setLoading(false);
+                });
+        } else if (isOfficeDoc) {
+            // For other Office docs, mark as loaded
+            setLoading(false);
+        }
+    }, [documentUrl, isTextBased, isDocx, isOfficeDoc]);
+    
+    // Highlight search text in DOCX and text documents
+    useEffect(() => {
+        if (!searchText || !contentRef.current) return;
+        
+        const content = contentRef.current;
+        const text = content.textContent || content.innerText;
+        
+        if (!text) return;
+        
+        // Find the search text (case-insensitive)
+        const searchLower = searchText.toLowerCase();
+        const textLower = text.toLowerCase();
+        const index = textLower.indexOf(searchLower);
+        
+        if (index !== -1) {
+            // Use CSS to highlight matching text
+            const walker = document.createTreeWalker(
+                content,
+                NodeFilter.SHOW_TEXT,
+                null,
+                false
+            );
+            
+            const textNodes = [];
+            let node;
+            while (node = walker.nextNode()) {
+                textNodes.push(node);
+            }
+            
+            textNodes.forEach(textNode => {
+                const nodeText = textNode.textContent;
+                const nodeLower = nodeText.toLowerCase();
+                const nodeIndex = nodeLower.indexOf(searchLower);
+                
+                if (nodeIndex !== -1) {
+                    const before = nodeText.substring(0, nodeIndex);
+                    const match = nodeText.substring(nodeIndex, nodeIndex + searchText.length);
+                    const after = nodeText.substring(nodeIndex + searchText.length);
+                    
+                    const span = document.createElement('span');
+                    span.innerHTML = `${before}<mark style="background-color: yellow; padding: 2px 4px; border-radius: 2px;">${match}</mark>${after}`;
+                    
+                    textNode.parentNode.replaceChild(span, textNode);
+                }
+            });
+            
+            // Scroll to first highlight
+            const firstMark = content.querySelector('mark');
+            if (firstMark) {
+                firstMark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+    }, [searchText, docxHtml, textContent]);
 
     const onDocumentLoadSuccess = ({ numPages }) => {
         setNumPages(numPages);
@@ -64,87 +181,209 @@ export default function DocumentViewer({ documentId, filename, pageNumber, searc
                     </button>
                 </div>
 
-                {/* Controls */}
-                <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={goToPrevPage}
-                            disabled={currentPage <= 1}
-                            className="p-2 hover:bg-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                            <ChevronLeft size={20} />
-                        </button>
-
-                        <span className="text-sm font-medium px-3">
-                            Page {currentPage} of {numPages || '?'}
-                        </span>
-
-                        <button
-                            onClick={goToNextPage}
-                            disabled={currentPage >= (numPages || 1)}
-                            className="p-2 hover:bg-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                            <ChevronRight size={20} />
-                        </button>
+                {/* Download button - hide the separate one and keep it in header */}
+                <div className="flex items-center justify-between p-3 border-b border-gray-200 bg-gray-50">
+                    <div className="text-sm text-gray-600">
+                        {isDocx && 'Word Document with formatting preserved'}
+                        {isPdf && 'PDF Document'}
+                        {isTextBased && 'Text Document'}
+                        {isOfficeDoc && 'Office Document'}
                     </div>
-
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={zoomOut}
-                            disabled={scale <= 0.5}
-                            className="p-2 hover:bg-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                            <ZoomOut size={20} />
-                        </button>
-
-                        <span className="text-sm font-medium px-3">
-                            {Math.round(scale * 100)}%
-                        </span>
-
-                        <button
-                            onClick={zoomIn}
-                            disabled={scale >= 2.0}
-                            className="p-2 hover:bg-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                            <ZoomIn size={20} />
-                        </button>
-                    </div>
+                    <a
+                        href={documentUrl}
+                        download={filename}
+                        className="flex items-center gap-2 px-3 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+                    >
+                        <Download size={16} />
+                        Download
+                    </a>
                 </div>
 
-                {/* PDF Viewer */}
-                <div className="flex-1 overflow-auto p-4 bg-gray-100">
+                {/* Controls - only show for PDFs */}
+                {isPdf && (
+                    <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={goToPrevPage}
+                                disabled={currentPage <= 1}
+                                className="p-2 hover:bg-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <ChevronLeft size={20} />
+                            </button>
+
+                            <span className="text-sm font-medium px-3">
+                                Page {currentPage} of {numPages || '?'}
+                            </span>
+
+                            <button
+                                onClick={goToNextPage}
+                                disabled={currentPage >= (numPages || 1)}
+                                className="p-2 hover:bg-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <ChevronRight size={20} />
+                            </button>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={zoomOut}
+                                disabled={scale <= 0.5}
+                                className="p-2 hover:bg-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <ZoomOut size={20} />
+                            </button>
+
+                            <span className="text-sm font-medium px-3">
+                                {Math.round(scale * 100)}%
+                            </span>
+
+                            <button
+                                onClick={zoomIn}
+                                disabled={scale >= 2.0}
+                                className="p-2 hover:bg-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <ZoomIn size={20} />
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Document Viewer */}
+                <div className="flex-1 overflow-hidden bg-gray-100">
                     {loading && (
                         <div className="flex items-center justify-center h-full">
-                            <div className="text-gray-500">Loading document...</div>
+                            <div className="text-center">
+                                <div className="text-gray-500 mb-2">Loading document...</div>
+                                <div className="text-sm text-gray-400">
+                                    {isPdf && 'Loading PDF...'}
+                                    {isDocx && 'Converting DOCX...'}
+                                    {isTextBased && 'Loading text...'}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {error && (
+                        <div className="flex flex-col items-center justify-center h-full gap-4">
+                            <FileText size={48} className="text-gray-400" />
+                            <div className="text-red-600">{error}</div>
+                            <a 
+                                href={documentUrl}
+                                download={filename}
+                                className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+                            >
+                                <Download size={16} />
+                                Download File
+                            </a>
                         </div>
                     )}
 
-                    <div className="flex justify-center">
-                        <Document
-                            file={documentUrl}
-                            onLoadSuccess={onDocumentLoadSuccess}
-                            loading={<div className="text-gray-500">Loading PDF...</div>}
-                            error={<div className="text-red-600">Failed to load PDF</div>}
-                        >
-                            <Page
-                                pageNumber={currentPage}
-                                scale={scale}
-                                renderTextLayer={true}
-                                renderAnnotationLayer={true}
-                                customTextRenderer={searchText ? (textItem) => {
-                                    // Highlight search text if provided
-                                    if (textItem.str.toLowerCase().includes(searchText.toLowerCase())) {
-                                        return (
-                                            <mark style={{ backgroundColor: 'yellow' }}>
-                                                {textItem.str}
-                                            </mark>
-                                        );
-                                    }
-                                    return textItem.str;
-                                } : undefined}
-                            />
-                        </Document>
-                    </div>
+                    {/* PDF Viewer */}
+                    {!error && isPdf && (
+                        <div className="flex justify-center h-full overflow-auto p-4">
+                            <Document
+                                file={documentUrl}
+                                onLoadSuccess={onDocumentLoadSuccess}
+                                loading={<div className="text-gray-500">Loading PDF...</div>}
+                                error={
+                                    <div className="text-center">
+                                        <div className="text-red-600 mb-4">Failed to load PDF</div>
+                                        <a 
+                                            href={documentUrl}
+                                            download={filename}
+                                            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+                                        >
+                                            <Download size={16} />
+                                            Download File
+                                        </a>
+                                    </div>
+                                }
+                            >
+                                <Page
+                                    pageNumber={currentPage}
+                                    scale={scale}
+                                    renderTextLayer={true}
+                                    renderAnnotationLayer={true}
+                                    customTextRenderer={searchText ? (textItem) => {
+                                        // Highlight search text if provided
+                                        if (textItem.str.toLowerCase().includes(searchText.toLowerCase())) {
+                                            return (
+                                                <mark style={{ backgroundColor: 'yellow' }}>
+                                                    {textItem.str}
+                                                </mark>
+                                            );
+                                        }
+                                        return textItem.str;
+                                    } : undefined}
+                                />
+                            </Document>
+                        </div>
+                    )}
+                    
+                    {/* DOCX Document Viewer with formatting */}
+                    {!loading && !error && isDocx && docxHtml && (
+                        <div className="h-full overflow-auto p-8">
+                            <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-sm p-12">
+                                <div 
+                                    ref={contentRef}
+                                    className="prose prose-sm max-w-none"
+                                    dangerouslySetInnerHTML={{ __html: docxHtml }}
+                                    style={{
+                                        fontFamily: '"Calibri", "Arial", sans-serif',
+                                        lineHeight: '1.6',
+                                        color: '#000'
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Office Document Viewer (DOC, XLSX, PPTX) */}
+                    {!loading && !error && isOfficeDoc && (
+                        <div className="h-full w-full flex flex-col items-center justify-center bg-white p-8">
+                            <div className="text-center mb-6">
+                                <FileText size={64} className="text-primary-600 mx-auto mb-4" />
+                                <h3 className="text-xl font-semibold text-gray-900 mb-2">{filename}</h3>
+                                <p className="text-gray-600 mb-4">
+                                    This is a {fileExtension.toUpperCase()} document
+                                </p>
+                                <p className="text-sm text-gray-500 mb-6">
+                                    Office documents are best viewed by downloading or opening in their native application
+                                </p>
+                            </div>
+                            <div className="flex gap-3">
+                                <a 
+                                    href={documentUrl}
+                                    download={filename}
+                                    className="flex items-center gap-2 px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium"
+                                >
+                                    <Download size={20} />
+                                    Download File
+                                </a>
+                                <a 
+                                    href={documentUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2 px-6 py-3 border-2 border-primary-600 text-primary-600 rounded-lg hover:bg-primary-50 font-medium"
+                                >
+                                    Open in New Tab
+                                </a>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Text File Viewer */}
+                    {!loading && !error && isTextBased && (
+                        <div className="h-full overflow-auto p-8">
+                            <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-sm p-8">
+                                <div ref={contentRef} className="prose prose-sm max-w-none">
+                                    <pre className="whitespace-pre-wrap font-mono text-sm text-gray-800 leading-relaxed">
+                                        {textContent}
+                                    </pre>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
