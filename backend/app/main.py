@@ -65,9 +65,9 @@ async def root():
 
 
 @app.get("/health")
-async def health_check():
+def health_check():
     """Health check endpoint for Container Apps"""
-    from app.db_session import get_async_session
+    from app.db_session import get_session
     
     health_status = {
         "status": "healthy",
@@ -79,8 +79,8 @@ async def health_check():
     
     # Check database connectivity
     try:
-        async for session in get_async_session():
-            await session.execute("SELECT 1")
+        for session in get_session():
+            session.execute("SELECT 1")
             health_status["services"]["database"] = "healthy"
             break
     except Exception as e:
