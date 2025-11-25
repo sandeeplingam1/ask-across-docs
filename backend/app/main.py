@@ -11,19 +11,27 @@ from app.routes import engagements, documents, questions, document_files
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
     # Startup
+    print("🚀 Starting Audit App API v1.1.0")
+    print(f"📍 Environment: {settings.environment}")
     await init_db()
     print("✅ Database initialized")
     print(f"✅ Vector store: {settings.vector_db_type}")
+    print(f"✅ CORS origins: {', '.join(settings.cors_origins_list[:3])}...")
+    if settings.enable_telemetry:
+        print("✅ Application Insights enabled")
+    print("✅ API ready to accept requests")
     yield
     # Shutdown
-    print("👋 Shutting down...")
+    print("👋 Shutting down Audit App API...")
 
 
 app = FastAPI(
     title="Audit App - Document Q&A API",
     description="RAG-based document question answering for audit engagements",
-    version="1.0.0",
-    lifespan=lifespan
+    version="1.1.0",
+    lifespan=lifespan,
+    docs_url="/docs" if settings.is_development else "/docs",
+    redoc_url="/redoc" if settings.is_development else "/redoc"
 )
 
 # CORS configuration
@@ -47,16 +55,49 @@ async def root():
     """Root endpoint"""
     return {
         "name": "Audit App API",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "status": "running",
-        "vector_db": settings.vector_db_type
+        "environment": settings.environment,
+        "vector_db": settings.vector_db_type,
+        "documentation": "/docs",
+        "health": "/health"
     }
 
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy"}
+    """Health check endpoint for Container Apps"""
+    from app.db_session import get_async_session
+    
+    health_status = {
+        "status": "healthy",
+        "version": "1.1.0",
+        "environment": settings.environment,
+        "vector_db": settings.vector_db_type,
+        "services": {}
+    }
+    
+    # Check database connectivity
+    try:
+        async for session in get_async_session():
+            await session.execute("SELECT 1")
+            health_status["services"]["database"] = "healthy"
+            break
+    except Exception as e:
+        health_status["status"] = "degraded"
+        health_status["services"]["database"] = f"unhealthy: {str(e)}"
+    
+    # Check Azure services connectivity
+    if settings.azure_storage_connection_string:
+        health_status["services"]["blob_storage"] = "configured"
+    
+    if settings.azure_search_endpoint:
+        health_status["services"]["ai_search"] = "configured"
+    
+    if settings.redis_url:
+        health_status["services"]["redis"] = "configured"
+    
+    return health_status
 
 
 if __name__ == "__main__":

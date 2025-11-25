@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     azure_openai_embedding_deployment: str
     azure_openai_chat_deployment: str
     
+    # Use Azure AD authentication in production (Managed Identity)
+    use_azure_ad_auth: bool = False
+    
     # Vector Database
     vector_db_type: Literal["chromadb", "azure_search"] = "chromadb"
     
@@ -69,7 +72,14 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         """Parse CORS origins from comma-separated string"""
-        return [origin.strip() for origin in self.backend_cors_origins.split(",")]
+        origins = [origin.strip() for origin in self.backend_cors_origins.split(",")]
+        # Add production frontend URL if in staging/production
+        if not self.is_development:
+            origins.extend([
+                "https://auditapp-frontend.graydune-dadabae1.eastus.azurecontainerapps.io",
+                "https://*.azurecontainerapps.io"
+            ])
+        return origins
     
     @property
     def is_production(self) -> bool:
