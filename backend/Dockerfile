@@ -3,13 +3,20 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including ODBC Driver 18 for SQL Server
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     libpq-dev \
     libmagic1 \
     curl \
+    gnupg2 \
+    apt-transport-https \
+    ca-certificates \
+    && curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
+    && curl https://packages.microsoft.com/config/debian/12/prod.list > /etc/apt/sources.list.d/mssql-release.list \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching

@@ -255,6 +255,45 @@ resource containerAppEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
 }
 
 // ===================================
+// Backend Container App
+// ===================================
+module backendApp 'modules/containerApps.bicep' = {
+  name: 'backend-container-app'
+  params: {
+    location: location
+    environment: environment
+    containerAppsEnvironmentId: containerAppEnv.id
+    containerRegistryName: containerRegistry.name
+    containerRegistryUsername: containerRegistry.listCredentials().username
+    containerRegistryPassword: containerRegistry.listCredentials().passwords[0].value
+    backendImage: 'auditapp-backend:latest'
+    databaseConnectionString: 'mssql+pyodbc://sqladmin:P@ssw0rd123!@${sqlServer.properties.fullyQualifiedDomainName}:1433/${sqlDatabase.name}?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no&Connection+Timeout=30'
+    azureOpenAIEndpoint: 'https://cog-obghpsbi63abq.openai.azure.com/'
+    azureOpenAIEmbeddingDeployment: 'text-embedding-3-large'
+    azureOpenAIChatDeployment: 'gpt-4.1-mini'
+    azureSearchEndpoint: useExistingAISearch ? 'https://${existingSearchService.name}.search.windows.net' : 'https://${searchService.name}.search.windows.net'
+    azureSearchApiKey: useExistingAISearch ? existingSearchService.listAdminKeys().primaryKey : searchService.listAdminKeys().primaryKey
+    azureSearchIndexName: 'audit-${environment}-documents'
+    azureStorageConnectionString: useExistingStorage ? 'DefaultEndpointsProtocol=https;AccountName=${existingStorageAccount.name};AccountKey=${existingStorageAccount.listKeys().keys[0].value};EndpointSuffix=core.windows.net' : 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=core.windows.net'
+    azureStorageContainerName: 'audit-${environment}-documents'
+    redisConnectionString: '${redis.properties.hostName}:6380,password=${redis.listKeys().primaryKey},ssl=True,abortConnect=False'
+    applicationInsightsConnectionString: appInsights.properties.ConnectionString
+  }
+}
+
+// ===================================
+// Frontend Static Web App
+// ===================================
+module frontendApp 'modules/staticWebApp.bicep' = {
+  name: 'frontend-static-web-app'
+  params: {
+    location: location
+    environment: environment
+    backendUrl: backendApp.outputs.backendUrl
+  }
+}
+
+// ===================================
 // Outputs
 // ===================================
 output sqlServerName string = sqlServer.name
@@ -272,4 +311,10 @@ output keyVaultUri string = keyVault.properties.vaultUri
 output appInsightsConnectionString string = appInsights.properties.ConnectionString
 output containerRegistryName string = containerRegistry.name
 output containerRegistryLoginServer string = containerRegistry.properties.loginServer
-output containerAppEnvName string = containerAppEnv.name
+output containerAppsEnvironmentName string = containerAppEnv.name
+
+// Application URLs
+output backendUrl string = backendApp.outputs.backendUrl
+output backendFqdn string = backendApp.outputs.backendFqdn
+output frontendUrl string = frontendApp.outputs.staticWebAppUrl
+output frontendHostname string = frontendApp.outputs.staticWebAppHostname
