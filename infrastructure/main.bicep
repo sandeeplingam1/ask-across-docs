@@ -298,6 +298,10 @@ resource backendContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
           name: 'redis-connection-string'
           value: '${redis.properties.hostName}:6380,password=${redis.listKeys().primaryKey},ssl=True,abortConnect=False'
         }
+        {
+          name: 'azure-openai-api-key'
+          value: 'PLACEHOLDER-REPLACE-WITH-YOUR-AZURE-OPENAI-KEY'
+        }
       ]
     }
     template: {
@@ -321,6 +325,10 @@ resource backendContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
             {
               name: 'AZURE_OPENAI_ENDPOINT'
               value: 'https://cog-obghpsbi63abq.openai.azure.com/'
+            }
+            {
+              name: 'AZURE_OPENAI_API_KEY'
+              secretRef: 'azure-openai-api-key'
             }
             {
               name: 'AZURE_OPENAI_API_VERSION'

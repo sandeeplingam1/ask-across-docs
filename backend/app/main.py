@@ -68,6 +68,7 @@ async def root():
 def health_check():
     """Health check endpoint for Container Apps"""
     from app.db_session import get_session
+    from sqlalchemy import text
     
     health_status = {
         "status": "healthy",
@@ -80,7 +81,7 @@ def health_check():
     # Check database connectivity
     try:
         for session in get_session():
-            session.execute("SELECT 1")
+            session.execute(text("SELECT 1"))
             health_status["services"]["database"] = "healthy"
             break
     except Exception as e:

@@ -76,7 +76,8 @@ class Settings(BaseSettings):
         # Add production frontend URL if in staging/production
         if not self.is_development:
             origins.extend([
-                "https://auditapp-frontend.graydune-dadabae1.eastus.azurecontainerapps.io",
+                "https://blue-island-0b509160f.3.azurestaticapps.net",
+                "https://*.azurestaticapps.net",
                 "https://*.azurecontainerapps.io"
             ])
         return origins
