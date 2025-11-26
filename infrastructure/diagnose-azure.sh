@@ -131,16 +131,16 @@ else
 fi
 echo ""
 
-# Check Application Insights
-echo "📊 APPLICATION INSIGHTS:"
-echo "========================"
-APPINSIGHTS=$(az monitor app-insights component show --resource-group $RG_NAME --query "[].{Name:name, Location:location, AppId:appId}" -o table 2>/dev/null || echo "")
-if [ -z "$APPINSIGHTS" ]; then
-    echo "❌ No Application Insights found"
-else
-    echo "$APPINSIGHTS"
-fi
-echo ""
+# Check Application Insights (commented out due to script hang)
+# echo "📊 APPLICATION INSIGHTS:"
+# echo "========================"
+# APPINSIGHTS=$(az monitor app-insights component show --resource-group $RG_NAME --query "[].{Name:name, Location:location, AppId:appId}" -o table 2>/dev/null || echo "")
+# if [ -z "$APPINSIGHTS" ]; then
+#     echo "❌ No Application Insights found"
+# else
+#     echo "$APPINSIGHTS"
+# fi
+# echo ""
 
 # Detailed Static Web App Configuration
 echo "🌐 STATIC WEB APP DETAILED CONFIG:"

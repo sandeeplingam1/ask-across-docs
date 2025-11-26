@@ -1,0 +1,202 @@
+========================================
+Audit App - Complete Deployment
+========================================
+
+[1;33mConfiguration:[0m
+  Environment: staging
+  Location: eastus
+  Resource Group: auditapp-staging-rg
+
+[0;32mChecking Azure login...[0m
+[0;32mUsing subscription: ai-dev[0m
+
+[0;32mCreating resource group: auditapp-staging-rg[0m
+{
+  "id": "/subscriptions/5174be66-ca82-423c-b405-259414906e7c/resourceGroups/auditapp-staging-rg",
+  "location": "eastus",
+  "managedBy": null,
+  "name": "auditapp-staging-rg",
+  "properties": {
+    "provisioningState": "Succeeded"
+  },
+  "tags": {
+    "Application": "AuditApp",
+    "Environment": "staging",
+    "ManagedBy": "Script"
+  },
+  "type": "Microsoft.Resources/resourceGroups"
+}
+
+[0;32mDeploying infrastructure...[0m
+This may take 10-15 minutes...
+
+[1;33mReusing existing resources from rg-saga-dev:[0m
+  - AI Search: gptkb-obghpsbi63abq
+  - Storage Account: stobghpsbi63abq
+
+WARNING: /home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(51,33) : Warning use-secure-value-for-secure-inputs: Property 'administratorLoginPassword' expects a secure value, but the value provided may not be secure. [https://aka.ms/bicep/linter-diagnostics#use-secure-value-for-secure-inputs]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(86,9) : Warning BCP334: The provided value can have a length as small as 2 and may be too short to assign to a target with a configured minimum length of 3. [https://aka.ms/bicep/core-diagnostics#BCP334]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(228,9) : Warning BCP334: The provided value can have a length as small as 3 and may be too short to assign to a target with a configured minimum length of 5. [https://aka.ms/bicep/core-diagnostics#BCP334]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(291,62) : Warning BCP422: A resource of type "Microsoft.Search/searchServices | null" may or may not exist when this function is called, which could cause the deployment to fail. [https://aka.ms/bicep/core-diagnostics#BCP422]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(291,105) : Warning BCP422: A resource of type "Microsoft.Search/searchServices | null" may or may not exist when this function is called, which could cause the deployment to fail. [https://aka.ms/bicep/core-diagnostics#BCP422]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(295,150) : Warning BCP422: A resource of type "Microsoft.Storage/storageAccounts | null" may or may not exist when this function is called, which could cause the deployment to fail. [https://aka.ms/bicep/core-diagnostics#BCP422]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(295,306) : Warning BCP422: A resource of type "Microsoft.Storage/storageAccounts | null" may or may not exist when this function is called, which could cause the deployment to fail. [https://aka.ms/bicep/core-diagnostics#BCP422]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(426,150) : Warning outputs-should-not-contain-secrets: Outputs should not contain secrets. Found possible secret: function 'listKeys' [https://aka.ms/bicep/linter-diagnostics#outputs-should-not-contain-secrets]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(426,173) : Warning BCP422: A resource of type "Microsoft.Storage/storageAccounts | null" may or may not exist when this function is called, which could cause the deployment to fail. [https://aka.ms/bicep/core-diagnostics#BCP422]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(426,314) : Warning outputs-should-not-contain-secrets: Outputs should not contain secrets. Found possible secret: function 'listKeys' [https://aka.ms/bicep/linter-diagnostics#outputs-should-not-contain-secrets]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(426,329) : Warning BCP422: A resource of type "Microsoft.Storage/storageAccounts | null" may or may not exist when this function is called, which could cause the deployment to fail. [https://aka.ms/bicep/core-diagnostics#BCP422]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(429,52) : Warning outputs-should-not-contain-secrets: Outputs should not contain secrets. Found possible secret: function 'listAdminKeys' [https://aka.ms/bicep/linter-diagnostics#outputs-should-not-contain-secrets]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(429,74) : Warning BCP422: A resource of type "Microsoft.Search/searchServices | null" may or may not exist when this function is called, which could cause the deployment to fail. [https://aka.ms/bicep/core-diagnostics#BCP422]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(429,103) : Warning outputs-should-not-contain-secrets: Outputs should not contain secrets. Found possible secret: function 'listAdminKeys' [https://aka.ms/bicep/linter-diagnostics#outputs-should-not-contain-secrets]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(429,117) : Warning BCP422: A resource of type "Microsoft.Search/searchServices | null" may or may not exist when this function is called, which could cause the deployment to fail. [https://aka.ms/bicep/core-diagnostics#BCP422]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(431,85) : Warning outputs-should-not-contain-secrets: Outputs should not contain secrets. Found possible secret: function 'listKeys' [https://aka.ms/bicep/linter-diagnostics#outputs-should-not-contain-secrets]
+
+Name                                 State      Timestamp                         Mode         ResourceGroup
+-----------------------------------  ---------  --------------------------------  -----------  -------------------
+auditapp-deployment-20251125-210703  Succeeded  2025-11-25T21:07:48.836442+00:00  Incremental  auditapp-staging-rg
+
+[0;32mDeployment completed![0m
+
+[1;33mBuilding and pushing backend Docker image...[0m
+  Container Registry: auditappstagingacrwgjuafflp2o4o
+[1;33mLogging in to ACR...[0m
+Login Succeeded
+[1;33mBuilding backend image...[0m
+DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+            Install the buildx component to build images with BuildKit:
+            https://docs.docker.com/go/buildx/
+
+Sending build context to Docker daemon    542MB
+Step 1/12 : FROM python:3.12-slim
+ ---> 445121148b18
+Step 2/12 : WORKDIR /app
+ ---> Using cache
+ ---> 2284d0cea4d9
+Step 3/12 : RUN apt-get update && apt-get install -y     gcc     g++     libpq-dev     libmagic1     curl     gnupg2     apt-transport-https     ca-certificates     && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg     && curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list | tee /etc/apt/sources.list.d/mssql-release.list     && apt-get update     && ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev     && rm -rf /var/lib/apt/lists/*
+ ---> Using cache
+ ---> 376ea640693a
+Step 4/12 : COPY requirements.txt .
+ ---> Using cache
+ ---> cedfd5467532
+Step 5/12 : RUN pip install --no-cache-dir -r requirements.txt &&     pip install --no-cache-dir 'numpy<2.0'
+ ---> Using cache
+ ---> f93e93091851
+Step 6/12 : COPY app/ ./app/
+ ---> f2c6b36b8fd3
+Step 7/12 : RUN mkdir -p /app/data
+ ---> Running in 924981294a1b
+ ---> Removed intermediate container 924981294a1b
+ ---> 25c0f5830593
+Step 8/12 : RUN useradd -m -u 1000 appuser &&     chown -R appuser:appuser /app
+ ---> Running in 378dcb7428f6
+ ---> Removed intermediate container 378dcb7428f6
+ ---> 3fecb48720aa
+Step 9/12 : USER appuser
+ ---> Running in 2c7074febbaf
+ ---> Removed intermediate container 2c7074febbaf
+ ---> 00d52c6483e7
+Step 10/12 : HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3     CMD curl -f http://localhost:8000/health || exit 1
+ ---> Running in fc09302037c3
+ ---> Removed intermediate container fc09302037c3
+ ---> 79c8664baa07
+Step 11/12 : EXPOSE 8000
+ ---> Running in bc52588fa73c
+ ---> Removed intermediate container bc52588fa73c
+ ---> 7aeb91b1f62e
+Step 12/12 : CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+ ---> Running in 1b8aed1e7152
+ ---> Removed intermediate container 1b8aed1e7152
+ ---> e425582a1463
+Successfully built e425582a1463
+Successfully tagged auditappstagingacrwgjuafflp2o4o.azurecr.io/auditapp-backend:latest
+[1;33mPushing to ACR...[0m
+The push refers to repository [auditappstagingacrwgjuafflp2o4o.azurecr.io/auditapp-backend]
+5dd5b9104b73: Preparing
+c370b35c0d42: Preparing
+938ddc70785d: Preparing
+fd073af96ad1: Preparing
+2a7f5f93995a: Preparing
+a017ebe3911e: Preparing
+80605ae20b90: Preparing
+e269231b9601: Preparing
+9c895a85998d: Preparing
+ae5637ef40a1: Preparing
+70a290c5e58b: Preparing
+a017ebe3911e: Waiting
+e269231b9601: Waiting
+9c895a85998d: Waiting
+ae5637ef40a1: Waiting
+70a290c5e58b: Waiting
+80605ae20b90: Waiting
+2a7f5f93995a: Layer already exists
+fd073af96ad1: Layer already exists
+80605ae20b90: Layer already exists
+a017ebe3911e: Layer already exists
+e269231b9601: Layer already exists
+9c895a85998d: Layer already exists
+938ddc70785d: Pushed
+ae5637ef40a1: Layer already exists
+5dd5b9104b73: Pushed
+c370b35c0d42: Pushed
+70a290c5e58b: Layer already exists
+latest: digest: sha256:fcc7046be109573943b7dc8ed94a3da3bc6754b47f947f5896397f589d424270 size: 2623
+[0;32m✓ Docker image deployed to ACR[0m
+[1;33mRedeploying infrastructure with Docker image...[0m
+WARNING: /home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(51,33) : Warning use-secure-value-for-secure-inputs: Property 'administratorLoginPassword' expects a secure value, but the value provided may not be secure. [https://aka.ms/bicep/linter-diagnostics#use-secure-value-for-secure-inputs]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(86,9) : Warning BCP334: The provided value can have a length as small as 2 and may be too short to assign to a target with a configured minimum length of 3. [https://aka.ms/bicep/core-diagnostics#BCP334]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(228,9) : Warning BCP334: The provided value can have a length as small as 3 and may be too short to assign to a target with a configured minimum length of 5. [https://aka.ms/bicep/core-diagnostics#BCP334]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(291,62) : Warning BCP422: A resource of type "Microsoft.Search/searchServices | null" may or may not exist when this function is called, which could cause the deployment to fail. [https://aka.ms/bicep/core-diagnostics#BCP422]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(291,105) : Warning BCP422: A resource of type "Microsoft.Search/searchServices | null" may or may not exist when this function is called, which could cause the deployment to fail. [https://aka.ms/bicep/core-diagnostics#BCP422]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(295,150) : Warning BCP422: A resource of type "Microsoft.Storage/storageAccounts | null" may or may not exist when this function is called, which could cause the deployment to fail. [https://aka.ms/bicep/core-diagnostics#BCP422]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(295,306) : Warning BCP422: A resource of type "Microsoft.Storage/storageAccounts | null" may or may not exist when this function is called, which could cause the deployment to fail. [https://aka.ms/bicep/core-diagnostics#BCP422]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(426,150) : Warning outputs-should-not-contain-secrets: Outputs should not contain secrets. Found possible secret: function 'listKeys' [https://aka.ms/bicep/linter-diagnostics#outputs-should-not-contain-secrets]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(426,173) : Warning BCP422: A resource of type "Microsoft.Storage/storageAccounts | null" may or may not exist when this function is called, which could cause the deployment to fail. [https://aka.ms/bicep/core-diagnostics#BCP422]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(426,314) : Warning outputs-should-not-contain-secrets: Outputs should not contain secrets. Found possible secret: function 'listKeys' [https://aka.ms/bicep/linter-diagnostics#outputs-should-not-contain-secrets]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(426,329) : Warning BCP422: A resource of type "Microsoft.Storage/storageAccounts | null" may or may not exist when this function is called, which could cause the deployment to fail. [https://aka.ms/bicep/core-diagnostics#BCP422]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(429,52) : Warning outputs-should-not-contain-secrets: Outputs should not contain secrets. Found possible secret: function 'listAdminKeys' [https://aka.ms/bicep/linter-diagnostics#outputs-should-not-contain-secrets]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(429,74) : Warning BCP422: A resource of type "Microsoft.Search/searchServices | null" may or may not exist when this function is called, which could cause the deployment to fail. [https://aka.ms/bicep/core-diagnostics#BCP422]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(429,103) : Warning outputs-should-not-contain-secrets: Outputs should not contain secrets. Found possible secret: function 'listAdminKeys' [https://aka.ms/bicep/linter-diagnostics#outputs-should-not-contain-secrets]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(429,117) : Warning BCP422: A resource of type "Microsoft.Search/searchServices | null" may or may not exist when this function is called, which could cause the deployment to fail. [https://aka.ms/bicep/core-diagnostics#BCP422]
+/home/sandeep.lingam/app-project/Audit-App/infrastructure/main.bicep(431,85) : Warning outputs-should-not-contain-secrets: Outputs should not contain secrets. Found possible secret: function 'listKeys' [https://aka.ms/bicep/linter-diagnostics#outputs-should-not-contain-secrets]
+
+[0;32m✓ Container App updated[0m
+
+[1;33mSetting up containers and queues in existing storage...[0m
+{
+  "created": false
+}
+{
+  "created": false
+}
+[0;32mStorage setup completed[0m
+
+[1;33mGetting deployment outputs...[0m
+
+[0;32mDeployment outputs saved to: deployment-outputs.json[0m
+
+[1;33mCreated Resources:[0m
+  SQL Server: auditapp-staging-sql-wgjuafflp2o4o
+  Storage Account: stobghpsbi63abq
+  Search Service: gptkb-obghpsbi63abq
+  Key Vault: kv-auditapp-wgjuafflp2
+
+[0;32mGenerating .env.production file...[0m
+[0;32m.env.production file created![0m
+
+========================================
+[0;32mDeployment Complete![0m
+========================================
+
+[1;33mNext Steps:[0m
+1. Review .env.production file and update any missing values
+2. Deploy backend: ./deploy-backend.sh
+3. Deploy frontend: ./deploy-frontend.sh
+4. Run database migrations
+5. Test the deployment
+
+[1;33mImportant:[0m
+- Store sensitive values in Azure Key Vault
+- Update SQL admin password in Azure Portal
+- Configure custom domains if needed
+- Set up CI/CD pipelines
+
