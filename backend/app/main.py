@@ -13,7 +13,7 @@ async def lifespan(app: FastAPI):
     # Startup
     print("🚀 Starting Audit App API v1.1.0")
     print(f"📍 Environment: {settings.environment}")
-    init_db()  # Sync function now
+    await init_db()  # Now async
     print("✅ Database initialized")
     print(f"✅ Vector store: {settings.vector_db_type}")
     print(f"✅ CORS origins: {', '.join(settings.cors_origins_list[:3])}...")
@@ -65,7 +65,7 @@ async def root():
 
 
 @app.get("/health")
-def health_check():
+async def health_check():
     """Health check endpoint for Container Apps"""
     from app.db_session import get_session
     from sqlalchemy import text
@@ -80,8 +80,8 @@ def health_check():
     
     # Check database connectivity
     try:
-        for session in get_session():
-            session.execute(text("SELECT 1"))
+        async for session in get_session():
+            await session.execute(text("SELECT 1"))
             health_status["services"]["database"] = "healthy"
             break
     except Exception as e:

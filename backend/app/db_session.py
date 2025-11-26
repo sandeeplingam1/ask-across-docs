@@ -1,27 +1,28 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from app.database import Base
 from app.config import settings
 import os
 
 
-# Create sync engine (pyodbc is not async)
-engine = create_engine(
+# Create async engine with aioodbc for SQL Server
+# aioodbc supports async operations with ODBC drivers
+engine = create_async_engine(
     settings.database_url,
     echo=False,
     pool_pre_ping=True,  # Verify connections before using
-    pool_recycle=3600    # Recycle connections after 1 hour
+    pool_recycle=3600,   # Recycle connections after 1 hour
+    future=True
 )
 
-# Create session factory
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
+# Create async session factory
+AsyncSessionLocal = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False
 )
 
 
-def init_db():
+async def init_db():
     """Initialize database tables"""
     # Create data directories if they don't exist
     os.makedirs("./data", exist_ok=True)
@@ -29,13 +30,11 @@ def init_db():
         os.makedirs(settings.chromadb_path, exist_ok=True)
     
     # Create tables
-    Base.metadata.create_all(bind=engine)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 
-def get_session() -> Session:
+async def get_session() -> AsyncSession:
     """Dependency for getting database session"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    async with AsyncSessionLocal() as session:
+        yield session
