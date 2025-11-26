@@ -1,25 +1,21 @@
-"""Question-answering service using RAG (Retrieval-Augmented Generation)"""
+"""Question-answering service with Azure AD authentication"""
 from openai import AzureOpenAI
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from app.config import settings
 from app.services.vector_store import get_vector_store
 from app.services.embedding_service import EmbeddingService
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class QAService:
-    """Handle question answering using RAG pattern"""
+    """Answer questions using RAG with Azure OpenAI"""
     
     def __init__(self):
-        """Initialize Azure OpenAI client and services"""
-        # Use Azure AD authentication if no API key is provided
-        if settings.azure_openai_api_key:
-            self.client = AzureOpenAI(
-                api_key=settings.azure_openai_api_key,
-                api_version=settings.azure_openai_api_version,
-                azure_endpoint=settings.azure_openai_endpoint
-            )
-        else:
-            # Use DefaultAzureCredential for Azure AD authentication
+        # Use Azure AD authentication (Managed Identity)
+        if settings.use_azure_ad_auth:
+            logger.info("Using Azure AD authentication for QA service")
             token_provider = get_bearer_token_provider(
                 DefaultAzureCredential(),
                 "https://cognitiveservices.azure.com/.default"

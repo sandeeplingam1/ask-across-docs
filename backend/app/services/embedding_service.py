@@ -1,7 +1,10 @@
-"""Embedding service using Azure OpenAI"""
+"""Azure OpenAI embedding service with Azure AD authentication"""
 from openai import AzureOpenAI
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from app.config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class EmbeddingService:
@@ -9,15 +12,9 @@ class EmbeddingService:
     
     def __init__(self):
         """Initialize Azure OpenAI client"""
-        # Use Azure AD authentication if no API key is provided
-        if settings.azure_openai_api_key:
-            self.client = AzureOpenAI(
-                api_key=settings.azure_openai_api_key,
-                api_version=settings.azure_openai_api_version,
-                azure_endpoint=settings.azure_openai_endpoint
-            )
-        else:
-            # Use DefaultAzureCredential for Azure AD authentication
+        # Use Azure AD authentication (Managed Identity)
+        if settings.use_azure_ad_auth:
+            logger.info("Using Azure AD authentication for OpenAI")
             token_provider = get_bearer_token_provider(
                 DefaultAzureCredential(),
                 "https://cognitiveservices.azure.com/.default"

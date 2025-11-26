@@ -95,9 +95,6 @@ async def health_check():
     if settings.azure_search_endpoint:
         health_status["services"]["ai_search"] = "configured"
     
-    if settings.redis_url:
-        health_status["services"]["redis"] = "configured"
-    
     return health_status
 
 

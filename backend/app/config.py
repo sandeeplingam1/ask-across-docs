@@ -15,15 +15,15 @@ class Settings(BaseSettings):
     # Environment
     environment: Literal["development", "staging", "production"] = "development"
     
-    # Azure OpenAI
+    # Azure OpenAI - Using Azure AD Authentication (Managed Identity)
     azure_openai_endpoint: str
-    azure_openai_api_key: str | None = None  # Optional - uses Azure AD if not provided
+    azure_openai_api_key: str | None = None  # Not used with Azure AD auth
     azure_openai_api_version: str = "2024-02-15-preview"
     azure_openai_embedding_deployment: str
     azure_openai_chat_deployment: str
     
     # Use Azure AD authentication in production (Managed Identity)
-    use_azure_ad_auth: bool = False
+    use_azure_ad_auth: bool = True  # Changed to True by default
     
     # Vector Database
     vector_db_type: Literal["chromadb", "azure_search"] = "chromadb"
@@ -39,13 +39,6 @@ class Settings(BaseSettings):
     # Azure Blob Storage (optional)
     azure_storage_connection_string: str | None = None
     azure_storage_container_name: str = "audit-documents"
-    
-    # Azure Storage Queue for background processing
-    azure_queue_connection_string: str | None = None
-    azure_queue_name: str = "document-processing"
-    
-    # Redis (for Celery/background tasks)
-    redis_url: str | None = None
     
     # Application
     backend_cors_origins: str = "http://localhost:5173,http://localhost:3000"
@@ -65,9 +58,6 @@ class Settings(BaseSettings):
     # Monitoring
     applicationinsights_connection_string: str | None = None
     enable_telemetry: bool = False
-    
-    # Security
-    secret_key: str = "your-secret-key-change-in-production"
     
     @property
     def cors_origins_list(self) -> list[str]:

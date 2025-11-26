@@ -1,6 +1,5 @@
 // Clean Audit App Infrastructure - Production Ready
-// Uses Azure AD Authentication (Managed Identity) - No API Keys
-// Removed: Redis, Key Vault, Queue Storage, unused features  
+// Removed: Redis, Queue Storage, unused features
 // Optimized for actual usage patterns
 
 targetScope = 'resourceGroup'
@@ -17,33 +16,31 @@ param appName string = 'auditapp'
 @description('Unique suffix for globally unique names')
 param uniqueSuffix string = uniqueString(resourceGroup().id)
 
-@description('Use existing AI Search service')
+@description('Use existing AI Search service instead of creating new')
 param useExistingAISearch bool = false
 
-@description('Existing AI Search service name')
+@description('Existing AI Search service name (if useExistingAISearch is true)')
 param existingAISearchName string = ''
 
-@description('Existing AI Search resource group')
+@description('Existing AI Search resource group (if useExistingAISearch is true)')
 param existingAISearchRG string = ''
 
-@description('Use existing Storage Account')
+@description('Use existing Storage Account instead of creating new')
 param useExistingStorage bool = false
 
-@description('Existing Storage Account name')
+@description('Existing Storage Account name (if useExistingStorage is true)')
 param existingStorageAccountName string = ''
 
-@description('Existing Storage Account resource group')
+@description('Existing Storage Account resource group (if useExistingStorage is true)')
 param existingStorageAccountRG string = ''
+
+@description('Azure OpenAI API Key')
+@secure()
+param azureOpenAIApiKey string
 
 @description('SQL Admin Password')
 @secure()
-param sqlAdminPassword string
-
-@description('Azure OpenAI Resource Name (for RBAC role assignment)')
-param azureOpenAIResourceName string = 'cog-obghpsbi63abq'
-
-@description('Azure OpenAI Resource Group (for RBAC role assignment)')
-param azureOpenAIResourceGroup string = 'rg-saga-dev'
+param sqlAdminPassword string = 'P@ssw0rd123!'
 
 // Variables
 var resourcePrefix = '${appName}-${environment}'
@@ -111,11 +108,13 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = if (!us
   }
 }
 
+// Reference to existing storage account
 resource existingStorageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' existing = if (useExistingStorage) {
   name: existingStorageAccountName
   scope: resourceGroup(existingStorageAccountRG)
 }
 
+// Blob container for documents
 resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-01-01' = if (!useExistingStorage) {
   parent: storageAccount
   name: 'default'
@@ -147,13 +146,14 @@ resource searchService 'Microsoft.Search/searchServices@2023-11-01' = if (!useEx
   }
 }
 
+// Reference to existing AI Search service
 resource existingSearchService 'Microsoft.Search/searchServices@2023-11-01' existing = if (useExistingAISearch) {
   name: existingAISearchName
   scope: resourceGroup(existingAISearchRG)
 }
 
 // ===================================
-// Application Insights
+// Application Insights & Monitoring
 // ===================================
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: '${resourcePrefix}-logs-${uniqueSuffix}'
@@ -194,7 +194,7 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' =
 }
 
 // ===================================
-// Container Apps Environment
+// Azure Container Apps Environment
 // ===================================
 resource containerAppEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
   name: '${resourcePrefix}-containerenv'
@@ -218,9 +218,6 @@ resource backendContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
   name: '${resourcePrefix}-backend'
   location: location
   tags: tags
-  identity: {
-    type: 'SystemAssigned'  // Enable Managed Identity for Azure AD auth
-  }
   properties: {
     environmentId: containerAppEnv.id
     configuration: {
@@ -254,6 +251,10 @@ resource backendContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
           name: 'storage-connection-string'
           value: useExistingStorage ? 'DefaultEndpointsProtocol=https;AccountName=${existingStorageAccount.name};AccountKey=${existingStorageAccount.listKeys().keys[0].value};EndpointSuffix=core.windows.net' : 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=core.windows.net'
         }
+        {
+          name: 'azure-openai-api-key'
+          value: azureOpenAIApiKey
+        }
       ]
     }
     template: {
@@ -279,8 +280,8 @@ resource backendContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
               value: 'https://cog-obghpsbi63abq.openai.azure.com/'
             }
             {
-              name: 'USE_AZURE_AD_AUTH'
-              value: 'true'
+              name: 'AZURE_OPENAI_API_KEY'
+              secretRef: 'azure-openai-api-key'
             }
             {
               name: 'AZURE_OPENAI_API_VERSION'
@@ -342,33 +343,11 @@ resource backendContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
 }
 
 // ===================================
-// RBAC Role Assignments for Managed Identity
-// ===================================
-
-// Reference to existing Azure OpenAI service
-resource azureOpenAI 'Microsoft.CognitiveServices/accounts@2023-05-01' existing = {
-  name: azureOpenAIResourceName
-  scope: resourceGroup(azureOpenAIResourceGroup)
-}
-
-// Assign "Cognitive Services OpenAI User" role to Container App's managed identity
-// Role ID: 5e0bd9bd-7b93-4f28-af87-19fc36ad61bd
-resource openAIRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(backendContainerApp.id, azureOpenAI.id, '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
-  scope: azureOpenAI
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
-    principalId: backendContainerApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-// ===================================
 // Frontend Static Web App
 // ===================================
 resource staticWebApp 'Microsoft.Web/staticSites@2023-01-01' = {
   name: '${resourcePrefix}-frontend'
-  location: 'eastus2'
+  location: 'eastus2'  // Static Web Apps not available in all regions
   tags: tags
   sku: {
     name: 'Free'
@@ -385,6 +364,7 @@ resource staticWebApp 'Microsoft.Web/staticSites@2023-01-01' = {
   }
 }
 
+// Configure Static Web App settings
 resource staticWebAppSettings 'Microsoft.Web/staticSites/config@2023-01-01' = {
   parent: staticWebApp
   name: 'appsettings'
@@ -398,6 +378,7 @@ resource staticWebAppSettings 'Microsoft.Web/staticSites/config@2023-01-01' = {
 // ===================================
 output sqlServerName string = sqlServer.name
 output sqlDatabaseName string = sqlDatabase.name
+output sqlConnectionString string = 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Initial Catalog=${sqlDatabase.name};Persist Security Info=False;User ID=sqladmin;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
 output storageAccountName string = useExistingStorage ? existingStorageAccount.name : storageAccount.name
 output storageConnectionString string = useExistingStorage ? 'DefaultEndpointsProtocol=https;AccountName=${existingStorageAccount.name};AccountKey=${existingStorageAccount.listKeys().keys[0].value};EndpointSuffix=core.windows.net' : 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=core.windows.net'
 output searchServiceName string = useExistingAISearch ? existingSearchService.name : searchService.name
@@ -407,6 +388,8 @@ output appInsightsConnectionString string = appInsights.properties.ConnectionStr
 output containerRegistryName string = containerRegistry.name
 output containerRegistryLoginServer string = containerRegistry.properties.loginServer
 output containerAppsEnvironmentName string = containerAppEnv.name
+
+// Application URLs
 output backendUrl string = 'https://${backendContainerApp.properties.configuration.ingress.fqdn}'
 output backendFqdn string = backendContainerApp.properties.configuration.ingress.fqdn
 output frontendUrl string = 'https://${staticWebApp.properties.defaultHostname}'
