@@ -3,9 +3,7 @@ Vector store abstraction layer - supports BOTH ChromaDB and Azure AI Search
 Switch by changing VECTOR_DB_TYPE in .env - NO CODE CHANGES NEEDED
 """
 from abc import ABC, abstractmethod
-from typing import Protocol, Optional
-import chromadb
-from chromadb.config import Settings as ChromaSettings
+from typing import Protocol, Optional, TYPE_CHECKING
 from azure.core.credentials import AzureKeyCredential
 from azure.search.documents import SearchClient
 from azure.search.documents.indexes import SearchIndexClient
@@ -20,6 +18,17 @@ from azure.search.documents.indexes.models import (
     HnswAlgorithmConfiguration,
 )
 from app.config import settings
+
+# Conditional import for ChromaDB - only import if needed
+if TYPE_CHECKING or settings.vector_db_type == "chromadb":
+    try:
+        import chromadb
+        from chromadb.config import Settings as ChromaSettings
+    except ImportError:
+        if settings.vector_db_type == "chromadb":
+            raise ImportError("chromadb is required when VECTOR_DB_TYPE=chromadb")
+        chromadb = None
+        ChromaSettings = None
 
 
 class VectorStore(ABC):
