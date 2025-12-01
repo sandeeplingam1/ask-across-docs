@@ -7,7 +7,7 @@ const api = axios.create({
     headers: {
         'Content-Type': 'application/json',
     },
-    timeout: 30000, // 30 second timeout for cloud
+    timeout: 300000, // 5 minute timeout for large batch uploads
 });
 
 // Engagements

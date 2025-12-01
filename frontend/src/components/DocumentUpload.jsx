@@ -39,7 +39,7 @@ export default function DocumentUpload({ engagement, onUploadComplete }) {
         }
     }, [engagement.id, onUploadComplete]);
 
-    const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    const { getRootProps, getInputProps, isDragActive, fileRejections } = useDropzone({
         onDrop,
         accept: {
             'application/pdf': ['.pdf'],
@@ -48,10 +48,26 @@ export default function DocumentUpload({ engagement, onUploadComplete }) {
             'text/plain': ['.txt'],
         },
         multiple: true,
+        maxSize: 100 * 1024 * 1024, // 100MB
     });
 
     return (
         <div className="space-y-4">
+            {fileRejections.length > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <h4 className="text-sm font-semibold text-red-800 mb-2">
+                        {fileRejections.length} file(s) rejected:
+                    </h4>
+                    <ul className="text-sm text-red-700 space-y-1">
+                        {fileRejections.map(({ file, errors }) => (
+                            <li key={file.name}>
+                                <strong>{file.name}</strong> - {errors[0].code === 'file-invalid-type' ? 'Unsupported file type (only PDF, DOCX, DOC, TXT)' : errors[0].message}
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+            
             <div
                 {...getRootProps()}
                 className={`
@@ -92,7 +108,10 @@ export default function DocumentUpload({ engagement, onUploadComplete }) {
                             or click to browse
                         </p>
                         <p className="text-xs text-gray-500">
-                            Supported: PDF, DOCX, DOC, TXT • Max 100MB per file
+                            Supported: PDF, DOCX, DOC, TXT only • Max 100MB per file
+                        </p>
+                        <p className="text-xs text-red-500 mt-1">
+                            Note: Excel (.xlsx) and image files (.png, .jpg) are not supported
                         </p>
                     </div>
                 )}
