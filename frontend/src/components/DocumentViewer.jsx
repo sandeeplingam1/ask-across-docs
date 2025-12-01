@@ -18,7 +18,9 @@ export default function DocumentViewer({ documentId, filename, pageNumber, searc
     const [error, setError] = useState(null);
     const contentRef = useRef(null);
 
-    const documentUrl = `http://localhost:8000/api/documents/${documentId}/file`;
+    // Use environment variable or production backend URL
+    const backendUrl = import.meta.env.VITE_API_URL || 'https://auditapp-staging-backend.graydune-dadabae1.eastus.azurecontainerapps.io';
+    const documentUrl = `${backendUrl}/api/documents/${documentId}/file`;
     
     // Determine file type from filename
     const fileExtension = filename.split('.').pop().toLowerCase();

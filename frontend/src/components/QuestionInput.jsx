@@ -100,7 +100,7 @@ export default function QuestionInput({ engagement, onAnswerReceived }) {
                         <input
                             ref={fileInputRef}
                             type="file"
-                            accept=".txt"
+                            accept=".txt,.doc,.docx"
                             onChange={handleBatchUpload}
                             disabled={loading || batchLoading}
                             className="hidden"
@@ -122,7 +122,7 @@ export default function QuestionInput({ engagement, onAnswerReceived }) {
                             ) : (
                                 <>
                                     <Upload size={20} />
-                                    Choose File (.txt)
+                                    Choose File (.txt, .docx)
                                 </>
                             )}
                         </label>

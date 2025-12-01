@@ -139,18 +139,38 @@ async def ask_batch_questions_from_file(
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session)
 ):
-    """Upload a file with questions (one per line) and get answers"""
+    """Upload a file with questions (one per line) and get answers - supports .txt, .docx"""
     # Verify engagement exists
     engagement = await session.get(Engagement, engagement_id)
     if not engagement:
         raise HTTPException(status_code=404, detail="Engagement not found")
     
-    # Read questions from file
+    # Extract text based on file type
+    filename = file.filename.lower()
     content = await file.read()
+    
     try:
-        text = content.decode('utf-8')
-    except UnicodeDecodeError:
-        text = content.decode('latin-1')
+        if filename.endswith('.docx'):
+            # Handle Word documents
+            import io
+            from docx import Document as DocxDocument
+            
+            doc = DocxDocument(io.BytesIO(content))
+            text = '\n'.join([paragraph.text for paragraph in doc.paragraphs if paragraph.text.strip()])
+        elif filename.endswith('.doc'):
+            # Legacy Word documents not supported - inform user
+            raise HTTPException(
+                status_code=400, 
+                detail="Legacy .doc files are not supported. Please save as .docx or .txt"
+            )
+        else:
+            # Handle text files (.txt)
+            try:
+                text = content.decode('utf-8')
+            except UnicodeDecodeError:
+                text = content.decode('latin-1')
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read file: {str(e)}")
     
     # Split by lines and filter empty
     questions = [q.strip() for q in text.split('\n') if q.strip()]

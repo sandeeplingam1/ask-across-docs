@@ -49,11 +49,11 @@ class QAService:
         # 1. Generate embedding for the question
         question_embedding = await self.embedding_service.embed_text(question)
         
-        # 2. Retrieve relevant chunks from vector store
+        # 2. Retrieve relevant chunks from vector store (get more for better context)
         search_results = await self.vector_store.search(
             engagement_id=engagement_id,
             query_embedding=question_embedding,
-            top_k=max_sources
+            top_k=max_sources * 2  # Get more results for better filtering
         )
         
         # Normalize the field names (vector store returns 'score', but we use 'similarity_score')
@@ -61,9 +61,26 @@ class QAService:
             if 'score' in result and 'similarity_score' not in result:
                 result['similarity_score'] = result['score']
         
-        # Filter out results with very low similarity scores (below 0.5 threshold)
-        # This prevents irrelevant results for queries like "hi" or "hello"
-        filtered_results = [r for r in search_results if r.get('similarity_score', 0) > 0.5]
+        # Filter out results with low similarity scores
+        # Use higher threshold (0.7) to ensure only relevant content is used
+        filtered_results = [r for r in search_results if r.get('similarity_score', 0) > 0.7]
+        
+        # If no high-confidence results, try with medium threshold (0.55)
+        if not filtered_results:
+            filtered_results = [r for r in search_results if r.get('similarity_score', 0) > 0.55]
+            if not filtered_results:
+                # Last resort: check if question is too generic
+                question_lower = question.lower().strip()
+                generic_questions = ['hi', 'hello', 'hey', 'what', 'who are you', 'help']
+                if question_lower in generic_questions or len(question_lower) < 5:
+                    return {
+                        "answer": "Please ask a specific question about the documents in this engagement.",
+                        "sources": [],
+                        "confidence": "low"
+                    }
+        
+        # Take only top max_sources after filtering
+        filtered_results = filtered_results[:max_sources]
         
         if not filtered_results:
             return {
@@ -79,25 +96,42 @@ class QAService:
         
         context = "\n\n".join(context_parts)
         
-        # 4. Build prompt for GPT
-        system_prompt = """You are an AI assistant helping auditors analyze documents. 
-Your role is to answer questions based ONLY on the provided document excerpts.
+        # 4. Build improved prompt for GPT
+        system_prompt = """You are an expert AI assistant helping auditors analyze engagement documents. 
 
-Rules:
-1. Only use information from the provided sources
-2. If the sources don't contain relevant information, say so
-3. Cite source numbers when referencing specific information (e.g., "According to Source 2...")
-4. Be precise and professional
-5. If you're uncertain, acknowledge it"""
+Your responsibilities:
+1. Answer questions based STRICTLY on the provided document excerpts
+2. Provide accurate, detailed answers citing specific sources
+3. Use professional audit terminology when appropriate
+4. If sources don't contain enough information to answer fully, clearly state what's missing
+5. Structure answers logically with clear explanations
+
+Important guidelines:
+- Always cite sources using "Source 1", "Source 2", etc.
+- Be specific and precise - include numbers, dates, names when available
+- If multiple sources contain relevant information, synthesize them coherently
+- Never make assumptions or add information not in the sources
+- If uncertain, explicitly state your confidence level"""
         
-        user_prompt = f"""Based on the following document excerpts, please answer the question.
+        user_prompt = f"""Please answer the following question based on the document excerpts provided below. 
 
-DOCUMENT EXCERPTS:
+Analyze the excerpts carefully and provide a comprehensive answer.
+
+=== DOCUMENT EXCERPTS ===
 {context}
 
-QUESTION: {question}
+=== QUESTION ===
+{question}
 
-ANSWER:"""
+=== INSTRUCTIONS ===
+Provide a detailed answer that:
+1. Directly addresses the question
+2. Cites specific sources (e.g., "According to Source 2...")
+3. Includes relevant details from the documents
+4. Is clear and professionally structured
+
+=== ANSWER ===
+"""
         
         # 5. Call Azure OpenAI
         try:
@@ -107,18 +141,24 @@ ANSWER:"""
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.3,  # Lower temperature for more factual responses
-                max_tokens=1000
+                temperature=0.1,  # Very low temperature for factual, focused responses
+                max_tokens=1500,  # Allow longer responses for detailed answers
+                top_p=0.9  # Focus on high-probability tokens
             )
             
             answer = response.choices[0].message.content
             
-            # Determine confidence based on similarity scores
+            # Determine confidence based on similarity scores and answer quality
             avg_score = sum(r["similarity_score"] for r in filtered_results) / len(filtered_results)
-            # Adjusted thresholds: 0.75+ = high, 0.60-0.75 = medium, below 0.60 = low
-            if avg_score >= 0.75:
+            max_score = max(r["similarity_score"] for r in filtered_results)
+            
+            # More accurate confidence calculation
+            # High: Strong semantic match (avg > 0.8 and max > 0.85)
+            # Medium: Good match (avg > 0.65 or max > 0.75)
+            # Low: Weak match
+            if avg_score >= 0.8 and max_score >= 0.85:
                 confidence = "high"
-            elif avg_score >= 0.60:
+            elif avg_score >= 0.65 or max_score >= 0.75:
                 confidence = "medium"
             else:
                 confidence = "low"
