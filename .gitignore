@@ -1,8 +1,32 @@
+# Environment files
 .env
+.env.local
+.env.*.local
+
+# OS files
 .DS_Store
-data/
+Thumbs.db
+
+# Python
 *.pyc
 __pycache__/
 venv/
+*.egg-info/
+.pytest_cache/
+
+# Node
 node_modules/
 dist/
+build/
+
+# Local data
+data/
+
+# Logs
+*.log
+
+# Process IDs
+*.pid
+
+# Deployment outputs
+deployment-outputs.json
