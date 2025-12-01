@@ -1,271 +1,266 @@
 #!/bin/bash
+# ============================================
+# Audit App - Smart Deployment Script
+# ============================================
+# Intelligently deploys only what's needed based on what changed
+# Usage: ./deploy.sh [environment] [what-to-deploy]
+#   environment: staging | prod (default: staging)
+#   what-to-deploy: all | backend | frontend | infra (default: auto-detect)
 
-# Audit App - Complete Azure Deployment Script
-# Deploys ALL infrastructure via Bicep (SQL, Redis, ACR, Container Apps Environment, Backend Container App, Static Web App)
 set -e
-
-echo "========================================"
-echo "Audit App - Complete Deployment"
-echo "========================================"
-echo ""
 
 # Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
+BLUE='\033[0;34m'
 NC='\033[0m'
 
 # Configuration
 ENVIRONMENT="${1:-staging}"
-LOCATION="${2:-eastus}"
-APP_NAME="auditapp"
-RESOURCE_GROUP="${APP_NAME}-${ENVIRONMENT}-rg"
+DEPLOY_TARGET="${2:-auto}"
+RG="auditapp-${ENVIRONMENT}-rg"
+ACR_NAME="auditappstagingacrwgjuafflp2o4o"
+CONTAINER_APP="auditapp-${ENVIRONMENT}-backend"
+STATIC_APP="auditapp-${ENVIRONMENT}-frontend"
 
-# Existing resources configuration (reusing from rg-saga-dev)
-EXISTING_RG="rg-saga-dev"
-EXISTING_AI_SEARCH="gptkb-obghpsbi63abq"
-EXISTING_STORAGE="stobghpsbi63abq"
-
-echo -e "${YELLOW}Configuration:${NC}"
-echo "  Environment: $ENVIRONMENT"
-echo "  Location: $LOCATION"
-echo "  Resource Group: $RESOURCE_GROUP"
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}   Audit App Smart Deployment${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo ""
+echo -e "${YELLOW}Environment:${NC} $ENVIRONMENT"
+echo -e "${YELLOW}Target:${NC} $DEPLOY_TARGET"
 echo ""
 
-# Check if Azure CLI is installed
-if ! command -v az &> /dev/null; then
-    echo -e "${RED}Error: Azure CLI is not installed${NC}"
-    echo "Install from: https://docs.microsoft.com/en-us/cli/azure/install-azure-cli"
-    exit 1
-fi
-
-# Check if logged in
-echo -e "${GREEN}Checking Azure login...${NC}"
-az account show > /dev/null 2>&1 || {
-    echo -e "${YELLOW}Not logged in. Please login...${NC}"
-    az login
+# ============================================
+# Function: Deploy Backend Only
+# ============================================
+deploy_backend() {
+    echo -e "${GREEN}📦 Deploying Backend...${NC}"
+    
+    # Build Docker image
+    echo -e "${YELLOW}Building Docker image...${NC}"
+    cd ../backend
+    docker build -t "${ACR_NAME}.azurecr.io/auditapp-backend:latest" .
+    
+    # Push to ACR
+    echo -e "${YELLOW}Pushing to Azure Container Registry...${NC}"
+    az acr login --name "$ACR_NAME"
+    docker push "${ACR_NAME}.azurecr.io/auditapp-backend:latest"
+    
+    # Update Container App
+    echo -e "${YELLOW}Updating Container App...${NC}"
+    az containerapp update \
+        --name "$CONTAINER_APP" \
+        --resource-group "$RG" \
+        --image "${ACR_NAME}.azurecr.io/auditapp-backend:latest"
+    
+    cd ../infrastructure
+    echo -e "${GREEN}✅ Backend deployed successfully!${NC}"
+    echo ""
 }
 
-# Get subscription
-SUBSCRIPTION=$(az account show --query name -o tsv)
-echo -e "${GREEN}Using subscription: $SUBSCRIPTION${NC}"
-echo ""
-
-# Create resource group if it doesn't exist
-echo -e "${GREEN}Creating resource group: $RESOURCE_GROUP${NC}"
-az group create \
-    --name "$RESOURCE_GROUP" \
-    --location "$LOCATION" \
-    --tags Environment="$ENVIRONMENT" Application="AuditApp" ManagedBy="Script"
-
-echo ""
-echo -e "${GREEN}Deploying infrastructure...${NC}"
-echo "This may take 10-15 minutes..."
-echo ""
-
-# Deploy Bicep template
-DEPLOYMENT_NAME="${APP_NAME}-deployment-$(date +%Y%m%d-%H%M%S)"
-
-if [ "$ENVIRONMENT" = "staging" ]; then
-    echo -e "${YELLOW}Reusing existing resources from $EXISTING_RG:${NC}"
-    echo "  - AI Search: $EXISTING_AI_SEARCH"
-    echo "  - Storage Account: $EXISTING_STORAGE"
+# ============================================
+# Function: Deploy Frontend Only
+# ============================================
+deploy_frontend() {
+    echo -e "${GREEN}🌐 Deploying Frontend...${NC}"
     echo ""
+    echo -e "${YELLOW}Frontend deploys automatically via GitHub Actions${NC}"
+    echo -e "${YELLOW}Just push your code:${NC} git push origin main"
+    echo ""
+    echo -e "${BLUE}Manual deployment (if needed):${NC}"
+    echo "  cd ../frontend"
+    echo "  npm install && npm run build"
+    echo "  npx @azure/static-web-apps-cli deploy ./dist --deployment-token \$TOKEN"
+    echo ""
+}
+
+# ============================================
+# Function: Deploy Infrastructure
+# ============================================
+deploy_infrastructure() {
+    echo -e "${GREEN}🏗️  Deploying Infrastructure...${NC}"
+    echo -e "${RED}⚠️  WARNING: This will update ALL Azure resources!${NC}"
+    echo -e "${YELLOW}This includes: SQL, Container Apps, Static Web App, etc.${NC}"
+    echo ""
+    read -p "Are you sure you want to continue? (yes/no): " CONFIRM
+    
+    if [ "$CONFIRM" != "yes" ]; then
+        echo -e "${YELLOW}Infrastructure deployment cancelled.${NC}"
+        return
+    fi
+    
+    echo -e "${YELLOW}Running Bicep deployment...${NC}"
+    DEPLOYMENT_NAME="auditapp-update-$(date +%Y%m%d-%H%M%S)"
     
     az deployment group create \
         --name "$DEPLOYMENT_NAME" \
-        --resource-group "$RESOURCE_GROUP" \
+        --resource-group "$RG" \
         --template-file main.bicep \
-        --parameters environment="$ENVIRONMENT" appName="$APP_NAME" \
+        --parameters environment="$ENVIRONMENT" \
+                     appName="auditapp" \
+                     sqlAdminPassword="P@ssw0rd123!" \
+                     azureOpenAIResourceName="cog-obghpsbi63abq" \
+                     azureOpenAIResourceGroup="rg-saga-dev" \
                      useExistingAISearch=true \
-                     existingAISearchName="$EXISTING_AI_SEARCH" \
-                     existingAISearchRG="$EXISTING_RG" \
+                     existingAISearchName="gptkb-obghpsbi63abq" \
+                     existingAISearchRG="rg-saga-dev" \
                      useExistingStorage=true \
-                     existingStorageAccountName="$EXISTING_STORAGE" \
-                     existingStorageAccountRG="$EXISTING_RG" \
-        --output table
-else
-    echo -e "${YELLOW}Creating all new resources for production${NC}"
+                     existingStorageAccountName="stobghpsbi63abq" \
+                     existingStorageAccountRG="rg-saga-dev"
+    
+    echo -e "${GREEN}✅ Infrastructure deployed successfully!${NC}"
+    echo ""
+}
+
+# ============================================
+# Function: Deploy Everything
+# ============================================
+deploy_all() {
+    echo -e "${GREEN}🚀 Deploying Everything...${NC}"
     echo ""
     
-    az deployment group create \
-        --name "$DEPLOYMENT_NAME" \
-        --resource-group "$RESOURCE_GROUP" \
-        --template-file main.bicep \
-        --parameters environment="$ENVIRONMENT" appName="$APP_NAME" \
-        --output table
-fi
-
-echo ""
-echo -e "${GREEN}Deployment completed!${NC}"
-echo ""
-
-# Get ACR name from deployment
-echo -e "${YELLOW}Building and pushing backend Docker image...${NC}"
-ACR_NAME=$(az deployment group show \
-    --name "$DEPLOYMENT_NAME" \
-    --resource-group "$RESOURCE_GROUP" \
-    --query "properties.outputs.containerRegistryName.value" -o tsv)
-
-echo "  Container Registry: $ACR_NAME"
-
-# Navigate to backend folder
-cd ../backend
-
-# Login to ACR
-echo -e "${YELLOW}Logging in to ACR...${NC}"
-az acr login --name "$ACR_NAME"
-
-# Build and push image
-echo -e "${YELLOW}Building backend image...${NC}"
-docker build -t "${ACR_NAME}.azurecr.io/auditapp-backend:latest" .
-
-echo -e "${YELLOW}Pushing to ACR...${NC}"
-docker push "${ACR_NAME}.azurecr.io/auditapp-backend:latest"
-
-echo -e "${GREEN}✓ Docker image deployed to ACR${NC}"
-cd ../infrastructure
-
-# Update Container App to pull the new image
-echo -e "${YELLOW}Redeploying infrastructure with Docker image...${NC}"
-if [ "$ENVIRONMENT" = "staging" ]; then
-    az deployment group create \
-        --name "${APP_NAME}-update-$(date +%Y%m%d-%H%M%S)" \
-        --resource-group "$RESOURCE_GROUP" \
-        --template-file main.bicep \
-        --parameters environment="$ENVIRONMENT" appName="$APP_NAME" \
-                     useExistingAISearch=true \
-                     existingAISearchName="$EXISTING_AI_SEARCH" \
-                     existingAISearchRG="$EXISTING_RG" \
-                     useExistingStorage=true \
-                     existingStorageAccountName="$EXISTING_STORAGE" \
-                     existingStorageAccountRG="$EXISTING_RG" \
-        --output none
-else
-    az deployment group create \
-        --name "${APP_NAME}-update-$(date +%Y%m%d-%H%M%S)" \
-        --resource-group "$RESOURCE_GROUP" \
-        --template-file main.bicep \
-        --parameters environment="$ENVIRONMENT" appName="$APP_NAME" \
-        --output none
-fi
-
-echo -e "${GREEN}✓ Container App updated${NC}"
-echo ""
-
-# Create containers and queues in existing storage if using existing storage
-if [ "$ENVIRONMENT" = "staging" ]; then
-    echo -e "${YELLOW}Setting up containers and queues in existing storage...${NC}"
+    deploy_infrastructure
+    sleep 5
+    deploy_backend
+    sleep 2
+    deploy_frontend
     
-    # Create blob container
-    az storage container create \
-        --name "audit-${ENVIRONMENT}-documents" \
-        --account-name "$EXISTING_STORAGE" \
-        --auth-mode login \
-        --only-show-errors || echo "Container may already exist"
+    echo -e "${GREEN}✅ Full deployment complete!${NC}"
+}
+
+# ============================================
+# Function: Auto-detect what to deploy
+# ============================================
+auto_detect() {
+    echo -e "${YELLOW}🔍 Auto-detecting changes...${NC}"
     
-    # Create queue
-    az storage queue create \
-        --name "audit-${ENVIRONMENT}-processing" \
-        --account-name "$EXISTING_STORAGE" \
-        --auth-mode login \
-        --only-show-errors || echo "Queue may already exist"
+    # Check if we're in a git repo
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+        echo -e "${YELLOW}Not in a git repository. Deploying backend by default.${NC}"
+        deploy_backend
+        return
+    fi
     
-    echo -e "${GREEN}Storage setup completed${NC}"
+    # Get changed files since last commit
+    CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+    
+    if [ -z "$CHANGED_FILES" ]; then
+        echo -e "${YELLOW}No changes detected. Deploying backend by default.${NC}"
+        deploy_backend
+        return
+    fi
+    
+    # Check what changed
+    BACKEND_CHANGED=$(echo "$CHANGED_FILES" | grep -c "^backend/" || true)
+    FRONTEND_CHANGED=$(echo "$CHANGED_FILES" | grep -c "^frontend/" || true)
+    INFRA_CHANGED=$(echo "$CHANGED_FILES" | grep -c "^infrastructure/main.bicep" || true)
+    
+    echo -e "${BLUE}Changes detected:${NC}"
+    [ "$BACKEND_CHANGED" -gt 0 ] && echo -e "  ${GREEN}✓${NC} Backend"
+    [ "$FRONTEND_CHANGED" -gt 0 ] && echo -e "  ${GREEN}✓${NC} Frontend"
+    [ "$INFRA_CHANGED" -gt 0 ] && echo -e "  ${GREEN}✓${NC} Infrastructure"
     echo ""
-fi
+    
+    # Deploy based on changes
+    if [ "$INFRA_CHANGED" -gt 0 ]; then
+        deploy_infrastructure
+    fi
+    
+    if [ "$BACKEND_CHANGED" -gt 0 ]; then
+        deploy_backend
+    fi
+    
+    if [ "$FRONTEND_CHANGED" -gt 0 ]; then
+        deploy_frontend
+    fi
+}
 
-# Get outputs
-echo -e "${YELLOW}Getting deployment outputs...${NC}"
-az deployment group show \
-    --name "$DEPLOYMENT_NAME" \
-    --resource-group "$RESOURCE_GROUP" \
-    --query properties.outputs \
-    --output json > deployment-outputs.json
+# ============================================
+# Function: Show status
+# ============================================
+show_status() {
+    echo -e "${BLUE}📊 Current Deployment Status${NC}"
+    echo ""
+    
+    # Backend
+    echo -e "${YELLOW}Backend:${NC}"
+    BACKEND_STATUS=$(az containerapp show --name "$CONTAINER_APP" --resource-group "$RG" \
+        --query "properties.runningStatus" -o tsv 2>/dev/null || echo "not found")
+    BACKEND_URL=$(az containerapp show --name "$CONTAINER_APP" --resource-group "$RG" \
+        --query "properties.configuration.ingress.fqdn" -o tsv 2>/dev/null || echo "")
+    
+    if [ "$BACKEND_STATUS" = "Running" ]; then
+        echo -e "  Status: ${GREEN}●${NC} Running"
+        echo -e "  URL: https://$BACKEND_URL"
+    else
+        echo -e "  Status: ${RED}●${NC} $BACKEND_STATUS"
+    fi
+    
+    # Frontend
+    echo ""
+    echo -e "${YELLOW}Frontend:${NC}"
+    FRONTEND_URL=$(az staticwebapp show --name "$STATIC_APP" --resource-group "$RG" \
+        --query "defaultHostname" -o tsv 2>/dev/null || echo "not found")
+    
+    if [ "$FRONTEND_URL" != "not found" ] && [ -n "$FRONTEND_URL" ]; then
+        echo -e "  Status: ${GREEN}●${NC} Deployed"
+        echo -e "  URL: https://$FRONTEND_URL"
+    else
+        echo -e "  Status: ${RED}●${NC} Not deployed"
+    fi
+    
+    echo ""
+}
 
-echo ""
-echo -e "${GREEN}Deployment outputs saved to: deployment-outputs.json${NC}"
-echo ""
+# ============================================
+# Main Logic
+# ============================================
 
-# Extract key values
-SQL_SERVER=$(az deployment group show --name "$DEPLOYMENT_NAME" --resource-group "$RESOURCE_GROUP" --query properties.outputs.sqlServerName.value -o tsv)
-STORAGE_ACCOUNT=$(az deployment group show --name "$DEPLOYMENT_NAME" --resource-group "$RESOURCE_GROUP" --query properties.outputs.storageAccountName.value -o tsv)
-SEARCH_SERVICE=$(az deployment group show --name "$DEPLOYMENT_NAME" --resource-group "$RESOURCE_GROUP" --query properties.outputs.searchServiceName.value -o tsv)
-KEY_VAULT=$(az deployment group show --name "$DEPLOYMENT_NAME" --resource-group "$RESOURCE_GROUP" --query properties.outputs.keyVaultName.value -o tsv)
+case "$DEPLOY_TARGET" in
+    "all")
+        deploy_all
+        ;;
+    "backend")
+        deploy_backend
+        ;;
+    "frontend")
+        deploy_frontend
+        ;;
+    "infra"|"infrastructure")
+        deploy_infrastructure
+        ;;
+    "status")
+        show_status
+        ;;
+    "auto")
+        auto_detect
+        ;;
+    *)
+        echo -e "${RED}Unknown target: $DEPLOY_TARGET${NC}"
+        echo ""
+        echo -e "${YELLOW}Usage:${NC}"
+        echo "  ./deploy.sh [environment] [target]"
+        echo ""
+        echo -e "${YELLOW}Targets:${NC}"
+        echo "  auto          - Auto-detect what changed (default)"
+        echo "  backend       - Deploy backend only"
+        echo "  frontend      - Deploy frontend only"
+        echo "  infra         - Deploy infrastructure only"
+        echo "  all           - Deploy everything"
+        echo "  status        - Show current deployment status"
+        echo ""
+        echo -e "${YELLOW}Examples:${NC}"
+        echo "  ./deploy.sh                    # Auto-detect in staging"
+        echo "  ./deploy.sh staging backend    # Deploy backend to staging"
+        echo "  ./deploy.sh prod all           # Full production deployment"
+        echo "  ./deploy.sh staging status     # Show status"
+        exit 1
+        ;;
+esac
 
-echo -e "${YELLOW}Created Resources:${NC}"
-echo "  SQL Server: $SQL_SERVER"
-echo "  Storage Account: $STORAGE_ACCOUNT"
-echo "  Search Service: $SEARCH_SERVICE"
-echo "  Key Vault: $KEY_VAULT"
-echo ""
-
-# Generate .env.production file
-echo -e "${GREEN}Generating .env.production file...${NC}"
-cat > ../.env.production << EOF
-# ==============================================
-# PRODUCTION ENVIRONMENT CONFIGURATION
-# ==============================================
-# Generated: $(date)
-
-ENVIRONMENT=production
-
-# Azure OpenAI (update with your existing resource)
-AZURE_OPENAI_ENDPOINT=https://cog-obghpsbi63abq.openai.azure.com/
-AZURE_OPENAI_API_VERSION=2024-02-15-preview
-AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-large
-AZURE_OPENAI_CHAT_DEPLOYMENT=gpt-4.1-mini
-
-# Vector Database
-VECTOR_DB_TYPE=azure_search
-AZURE_SEARCH_ENDPOINT=$(az deployment group show --name "$DEPLOYMENT_NAME" --resource-group "$RESOURCE_GROUP" --query properties.outputs.searchEndpoint.value -o tsv)
-AZURE_SEARCH_API_KEY=$(az deployment group show --name "$DEPLOYMENT_NAME" --resource-group "$RESOURCE_GROUP" --query properties.outputs.searchApiKey.value -o tsv)
-AZURE_SEARCH_INDEX_NAME=audit-${ENVIRONMENT}-documents
-
-# Database
-DATABASE_URL=$(az deployment group show --name "$DEPLOYMENT_NAME" --resource-group "$RESOURCE_GROUP" --query properties.outputs.sqlConnectionString.value -o tsv)
-
-# Storage
-AZURE_STORAGE_CONNECTION_STRING=$(az deployment group show --name "$DEPLOYMENT_NAME" --resource-group "$RESOURCE_GROUP" --query properties.outputs.storageConnectionString.value -o tsv)
-AZURE_STORAGE_CONTAINER_NAME=audit-${ENVIRONMENT}-documents
-
-# Redis
-REDIS_URL=$(az deployment group show --name "$DEPLOYMENT_NAME" --resource-group "$RESOURCE_GROUP" --query properties.outputs.redisConnectionString.value -o tsv)
-
-# Monitoring
-APPLICATIONINSIGHTS_CONNECTION_STRING=$(az deployment group show --name "$DEPLOYMENT_NAME" --resource-group "$RESOURCE_GROUP" --query properties.outputs.appInsightsConnectionString.value -o tsv)
-ENABLE_TELEMETRY=true
-
-# Application
-BACKEND_CORS_ORIGINS=https://${APP_NAME}-${ENVIRONMENT}-frontend.azurestaticapps.net
-MAX_UPLOAD_SIZE_MB=100
-CHUNK_SIZE=1000
-CHUNK_OVERLAP=200
-ENABLE_BACKGROUND_PROCESSING=true
-MAX_CONCURRENT_DOCUMENT_PROCESSING=10
-
-# Security
-SECRET_KEY=$(openssl rand -base64 32)
-
-EOF
-
-echo -e "${GREEN}.env.production file created!${NC}"
-echo ""
-
-echo "========================================"
-echo -e "${GREEN}Deployment Complete!${NC}"
-echo "========================================"
-echo ""
-echo -e "${YELLOW}Next Steps:${NC}"
-echo "1. Review .env.production file and update any missing values"
-echo "2. Deploy backend: ./deploy-backend.sh"
-echo "3. Deploy frontend: ./deploy-frontend.sh"
-echo "4. Run database migrations"
-echo "5. Test the deployment"
-echo ""
-echo -e "${YELLOW}Important:${NC}"
-echo "- Store sensitive values in Azure Key Vault"
-echo "- Update SQL admin password in Azure Portal"
-echo "- Configure custom domains if needed"
-echo "- Set up CI/CD pipelines"
+echo -e "${BLUE}========================================${NC}"
+echo -e "${GREEN}✅ Deployment Complete!${NC}"
+echo -e "${BLUE}========================================${NC}"
 echo ""
