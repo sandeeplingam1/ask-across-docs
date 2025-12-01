@@ -1,10 +1,12 @@
 """Question-answering service with Azure AD authentication"""
-from openai import AzureOpenAI
+from openai import AzureOpenAI, RateLimitError
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from app.config import settings
 from app.services.vector_store import get_vector_store
 from app.services.embedding_service import EmbeddingService
 import logging
+import time
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -133,20 +135,46 @@ Provide a detailed answer that:
 === ANSWER ===
 """
         
-        # 5. Call Azure OpenAI
-        try:
-            response = self.client.chat.completions.create(
-                model=self.chat_deployment,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.1,  # Very low temperature for factual, focused responses
-                max_tokens=1500,  # Allow longer responses for detailed answers
-                top_p=0.9  # Focus on high-probability tokens
-            )
-            
-            answer = response.choices[0].message.content
+        # 5. Call Azure OpenAI with retry logic for rate limiting
+        max_retries = 5
+        retry_delay = 1  # Start with 1 second
+        
+        for attempt in range(max_retries):
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.chat_deployment,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    temperature=0.1,  # Very low temperature for factual, focused responses
+                    max_tokens=1500,  # Allow longer responses for detailed answers
+                    top_p=0.9  # Focus on high-probability tokens
+                )
+                
+                answer = response.choices[0].message.content
+                break  # Success, exit retry loop
+                
+            except RateLimitError as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Rate limit hit, retrying in {retry_delay}s (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+                else:
+                    logger.error(f"Rate limit exceeded after {max_retries} attempts")
+                    return {
+                        "answer": "The system is currently busy. Please try again in a few moments.",
+                        "sources": filtered_results,
+                        "confidence": "low"
+                    }
+            except Exception as e:
+                logger.error(f"Error calling Azure OpenAI: {e}")
+                return {
+                    "answer": f"Error generating answer: {str(e)}",
+                    "sources": filtered_results,
+                    "confidence": "low"
+                }
             
             # Determine confidence based on similarity scores and answer quality
             avg_score = sum(r["similarity_score"] for r in filtered_results) / len(filtered_results)
@@ -163,19 +191,11 @@ Provide a detailed answer that:
             else:
                 confidence = "low"
             
-            return {
-                "answer": answer,
-                "sources": filtered_results,
-                "confidence": confidence
-            }
-            
-        except Exception as e:
-            print(f"Error calling Azure OpenAI: {e}")
-            return {
-                "answer": f"Error generating answer: {str(e)}",
-                "sources": filtered_results,
-                "confidence": "low"
-            }
+        return {
+            "answer": answer,
+            "sources": filtered_results,
+            "confidence": confidence
+        }
     
     async def answer_batch(
         self,
