@@ -18,6 +18,9 @@ xlrd==2.0.1  # Legacy Excel files (.xls)
 Pillow==11.0.0  # Image processing (PNG, JPG, etc.)
 pytesseract==0.3.13  # OCR for images
 
+# Vector Database
+chromadb==0.5.23  # Local vector database
+
 # Data validation and settings
 pydantic==2.10.3
 pydantic-settings==2.6.1

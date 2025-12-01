@@ -3,7 +3,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies including ODBC Driver 18 for SQL Server
+# Install system dependencies including ODBC Driver 18 for SQL Server and Tesseract OCR
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
@@ -13,6 +13,8 @@ RUN apt-get update && apt-get install -y \
     gnupg2 \
     apt-transport-https \
     ca-certificates \
+    tesseract-ocr \
+    tesseract-ocr-eng \
     && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
     && curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list | tee /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
