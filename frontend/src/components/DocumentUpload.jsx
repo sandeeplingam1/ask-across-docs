@@ -46,6 +46,10 @@ export default function DocumentUpload({ engagement, onUploadComplete }) {
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
             'application/msword': ['.doc'],
             'text/plain': ['.txt'],
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+            'application/vnd.ms-excel': ['.xls'],
+            'image/png': ['.png'],
+            'image/jpeg': ['.jpg', '.jpeg'],
         },
         multiple: true,
         maxSize: 100 * 1024 * 1024, // 100MB
@@ -108,10 +112,7 @@ export default function DocumentUpload({ engagement, onUploadComplete }) {
                             or click to browse
                         </p>
                         <p className="text-xs text-gray-500">
-                            Supported: PDF, DOCX, DOC, TXT only • Max 100MB per file
-                        </p>
-                        <p className="text-xs text-red-500 mt-1">
-                            Note: Excel (.xlsx) and image files (.png, .jpg) are not supported
+                            Supported: PDF, DOCX, DOC, TXT, XLSX, XLS, PNG, JPG • Max 100MB per file
                         </p>
                     </div>
                 )}

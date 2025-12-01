@@ -1,10 +1,24 @@
-"""Document processing service for extracting text from PDFs, DOCX, and TXT files"""
+"""Document processing service for extracting text from various document types"""
 import io
 import os
 from pathlib import Path
 from typing import BinaryIO, Optional
 import PyPDF2
 from docx import Document as DocxDocument
+
+# Optional imports with fallback
+try:
+    from openpyxl import load_workbook
+    EXCEL_SUPPORT = True
+except ImportError:
+    EXCEL_SUPPORT = False
+
+try:
+    from PIL import Image
+    import pytesseract
+    IMAGE_SUPPORT = True
+except ImportError:
+    IMAGE_SUPPORT = False
 
 
 class DocumentProcessor:
@@ -14,7 +28,12 @@ class DocumentProcessor:
         ".pdf": "application/pdf",
         ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         ".doc": "application/msword",
-        ".txt": "text/plain"
+        ".txt": "text/plain",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".xls": "application/vnd.ms-excel",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
     }
     
     def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 200):
@@ -75,6 +94,10 @@ class DocumentProcessor:
                 'text': text,
                 'pages': [{'page_num': 1, 'text': text, 'start_char': 0, 'end_char': len(text)}]
             }
+        elif ext in [".xlsx", ".xls"]:
+            return self._extract_excel(file_content, ext)
+        elif ext in [".png", ".jpg", ".jpeg"]:
+            return self._extract_image(file_content)
         else:
             raise ValueError(f"Unsupported file type: {ext}")
     
@@ -230,3 +253,67 @@ class DocumentProcessor:
             start = end - self.chunk_overlap if end < len(text) else end
         
         return chunks
+    
+    def _extract_excel(self, file_content: BinaryIO, ext: str) -> dict:
+        """Extract text from Excel files"""
+        if not EXCEL_SUPPORT:
+            raise ValueError("Excel support not available. Install openpyxl and xlrd.")
+        
+        try:
+            workbook = load_workbook(file_content, read_only=True, data_only=True)
+            sheets_text = []
+            sheets_metadata = []
+            current_char = 0
+            
+            for sheet_idx, sheet_name in enumerate(workbook.sheetnames):
+                sheet = workbook[sheet_name]
+                rows_text = []
+                
+                # Extract all cell values
+                for row in sheet.iter_rows(values_only=True):
+                    # Filter out None values and convert to strings
+                    row_values = [str(cell) for cell in row if cell is not None]
+                    if row_values:
+                        rows_text.append(" | ".join(row_values))
+                
+                if rows_text:
+                    sheet_text = f"[Sheet: {sheet_name}]\n" + "\n".join(rows_text)
+                    sheets_text.append(sheet_text)
+                    
+                    sheets_metadata.append({
+                        'page_num': sheet_idx + 1,
+                        'text': sheet_text,
+                        'start_char': current_char,
+                        'end_char': current_char + len(sheet_text),
+                        'sheet_name': sheet_name
+                    })
+                    current_char += len(sheet_text) + 2
+            
+            full_text = "\n\n".join(sheets_text)
+            return {
+                'text': full_text,
+                'pages': sheets_metadata
+            }
+        except Exception as e:
+            raise ValueError(f"Failed to extract Excel: {str(e)}")
+    
+    def _extract_image(self, file_content: BinaryIO) -> dict:
+        """Extract text from images using OCR"""
+        if not IMAGE_SUPPORT:
+            raise ValueError("Image/OCR support not available. Install Pillow and pytesseract.")
+        
+        try:
+            image = Image.open(file_content)
+            
+            # Perform OCR
+            text = pytesseract.image_to_string(image)
+            
+            if not text.strip():
+                text = "[No text detected in image]"
+            
+            return {
+                'text': text,
+                'pages': [{'page_num': 1, 'text': text, 'start_char': 0, 'end_char': len(text)}]
+            }
+        except Exception as e:
+            raise ValueError(f"Failed to extract text from image: {str(e)}")
