@@ -7,6 +7,8 @@ export default function DocumentUpload({ engagement, onUploadComplete }) {
     const [uploading, setUploading] = useState(false);
     const [uploadResults, setUploadResults] = useState(null);
     const [progress, setProgress] = useState(0);
+    const [currentBatch, setCurrentBatch] = useState(0);
+    const [totalBatches, setTotalBatches] = useState(0);
 
     const onDrop = useCallback(async (acceptedFiles) => {
         if (acceptedFiles.length === 0) return;
@@ -15,19 +17,67 @@ export default function DocumentUpload({ engagement, onUploadComplete }) {
         setUploadResults(null);
         setProgress(0);
 
-        try {
-            const response = await documentApi.upload(
-                engagement.id,
-                acceptedFiles,
-                (progressEvent) => {
-                    const percentCompleted = Math.round(
-                        (progressEvent.loaded * 100) / progressEvent.total
-                    );
-                    setProgress(percentCompleted);
-                }
-            );
+        const BATCH_SIZE = 5; // Process 5 files at a time
+        const batches = [];
+        for (let i = 0; i < acceptedFiles.length; i += BATCH_SIZE) {
+            batches.push(acceptedFiles.slice(i, i + BATCH_SIZE));
+        }
 
-            setUploadResults(response.data);
+        setTotalBatches(batches.length);
+
+        const allResults = [];
+        let successCount = 0;
+        let failCount = 0;
+
+        try {
+            for (let i = 0; i < batches.length; i++) {
+                setCurrentBatch(i + 1);
+                const batch = batches[i];
+                
+                try {
+                    const response = await documentApi.upload(
+                        engagement.id,
+                        batch,
+                        (progressEvent) => {
+                            const batchProgress = Math.round(
+                                (progressEvent.loaded * 100) / progressEvent.total
+                            );
+                            const overallProgress = Math.round(
+                                ((i + (batchProgress / 100)) / batches.length) * 100
+                            );
+                            setProgress(overallProgress);
+                        }
+                    );
+
+                    allResults.push(...response.data.results);
+                    successCount += response.data.successful;
+                    failCount += response.data.failed;
+                } catch (error) {
+                    console.error(`Batch ${i + 1} failed:`, error);
+                    // Mark batch files as failed
+                    batch.forEach(file => {
+                        allResults.push({
+                            filename: file.name,
+                            status: 'failed',
+                            message: 'Upload error: ' + (error.response?.data?.detail || error.message)
+                        });
+                        failCount++;
+                    });
+                }
+
+                // Small delay between batches to avoid overwhelming the server
+                if (i < batches.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+            }
+
+            setUploadResults({
+                total_files: acceptedFiles.length,
+                successful: successCount,
+                failed: failCount,
+                results: allResults
+            });
+
             if (onUploadComplete) {
                 onUploadComplete();
             }
@@ -36,6 +86,8 @@ export default function DocumentUpload({ engagement, onUploadComplete }) {
             alert('Upload failed: ' + (error.response?.data?.detail || error.message));
         } finally {
             setUploading(false);
+            setCurrentBatch(0);
+            setTotalBatches(0);
         }
     }, [engagement.id, onUploadComplete]);
 
@@ -93,6 +145,11 @@ export default function DocumentUpload({ engagement, onUploadComplete }) {
                         <p className="text-lg font-medium text-gray-900">
                             Uploading and processing documents...
                         </p>
+                        {totalBatches > 1 && (
+                            <p className="text-sm text-gray-600 mt-1">
+                                Processing batch {currentBatch} of {totalBatches}
+                            </p>
+                        )}
                         <div className="mt-4 max-w-md mx-auto">
                             <div className="w-full bg-gray-200 rounded-full h-2">
                                 <div
