@@ -81,7 +81,8 @@ async def health_check():
     # Check database connectivity
     try:
         async for session in get_session():
-            await session.execute(text("SELECT 1"))
+            result = await session.execute(text("SELECT 1"))
+            result.fetchone()  # Consume the result
             health_status["services"]["database"] = "healthy"
             break
     except Exception as e:
