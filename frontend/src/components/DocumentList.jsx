@@ -5,6 +5,8 @@ import { FileText, Trash2, CheckCircle, XCircle, Clock } from 'lucide-react';
 export default function DocumentList({ engagement, refreshTrigger }) {
     const [documents, setDocuments] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [selectedDocs, setSelectedDocs] = useState(new Set());
+    const [deleting, setDeleting] = useState(false);
 
     useEffect(() => {
         loadDocuments();
@@ -14,10 +16,59 @@ export default function DocumentList({ engagement, refreshTrigger }) {
         try {
             const response = await documentApi.list(engagement.id);
             setDocuments(response.data);
+            setSelectedDocs(new Set()); // Clear selection when reloading
         } catch (error) {
             console.error('Failed to load documents:', error);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const toggleSelection = (docId) => {
+        const newSelection = new Set(selectedDocs);
+        if (newSelection.has(docId)) {
+            newSelection.delete(docId);
+        } else {
+            newSelection.add(docId);
+        }
+        setSelectedDocs(newSelection);
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedDocs.size === documents.length) {
+            setSelectedDocs(new Set());
+        } else {
+            setSelectedDocs(new Set(documents.map(d => d.id)));
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        if (selectedDocs.size === 0) return;
+        
+        if (!confirm(`Delete ${selectedDocs.size} selected document(s)?`)) return;
+
+        setDeleting(true);
+        const deletePromises = Array.from(selectedDocs).map(docId =>
+            documentApi.delete(engagement.id, docId).catch(err => {
+                console.error(`Failed to delete ${docId}:`, err);
+                return { error: true, docId };
+            })
+        );
+
+        try {
+            const results = await Promise.all(deletePromises);
+            const failed = results.filter(r => r?.error).length;
+            
+            if (failed > 0) {
+                alert(`Deleted ${selectedDocs.size - failed} documents. ${failed} failed.`);
+            }
+            
+            loadDocuments();
+        } catch (error) {
+            console.error('Bulk delete failed:', error);
+            alert('Error deleting documents');
+        } finally {
+            setDeleting(false);
         }
     };
 
@@ -65,9 +116,34 @@ export default function DocumentList({ engagement, refreshTrigger }) {
 
     return (
         <div className="card">
-            <h3 className="text-lg font-semibold mb-4">
-                Documents ({documents.length})
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">
+                    Documents ({documents.length})
+                </h3>
+                
+                {selectedDocs.size > 0 && (
+                    <button
+                        onClick={handleBulkDelete}
+                        disabled={deleting}
+                        className="btn-secondary flex items-center gap-2 text-sm"
+                    >
+                        <Trash2 size={16} />
+                        Delete {selectedDocs.size} selected
+                    </button>
+                )}
+            </div>
+
+            <div className="mb-3 pb-3 border-b flex items-center gap-2">
+                <input
+                    type="checkbox"
+                    checked={selectedDocs.size === documents.length && documents.length > 0}
+                    onChange={toggleSelectAll}
+                    className="w-4 h-4 text-primary-600 rounded focus:ring-2 focus:ring-primary-500"
+                />
+                <span className="text-sm text-gray-600">
+                    Select All {selectedDocs.size > 0 && `(${selectedDocs.size} selected)`}
+                </span>
+            </div>
 
             <div className="space-y-2">
                 {documents.map((doc) => (
@@ -76,6 +152,12 @@ export default function DocumentList({ engagement, refreshTrigger }) {
                         className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
                     >
                         <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <input
+                                type="checkbox"
+                                checked={selectedDocs.has(doc.id)}
+                                onChange={() => toggleSelection(doc.id)}
+                                className="w-4 h-4 text-primary-600 rounded focus:ring-2 focus:ring-primary-500 flex-shrink-0"
+                            />
                             <FileText className="text-primary-600 flex-shrink-0" size={20} />
 
                             <div className="flex-1 min-w-0">
