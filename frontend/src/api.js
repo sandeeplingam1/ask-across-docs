@@ -32,6 +32,8 @@ export const documentApi = {
             onUploadProgress: onProgress,
         });
     },
+    processQueued: (engagementId) =>
+        api.post(`/engagements/${engagementId}/documents/process-queued`),
     delete: (engagementId, documentId) =>
         api.delete(`/engagements/${engagementId}/documents/${documentId}`),
 };

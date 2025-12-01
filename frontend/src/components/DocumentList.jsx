@@ -7,6 +7,7 @@ export default function DocumentList({ engagement, refreshTrigger }) {
     const [loading, setLoading] = useState(true);
     const [selectedDocs, setSelectedDocs] = useState(new Set());
     const [deleting, setDeleting] = useState(false);
+    const [processing, setProcessing] = useState(false);
 
     useEffect(() => {
         loadDocuments();
@@ -21,6 +22,28 @@ export default function DocumentList({ engagement, refreshTrigger }) {
             console.error('Failed to load documents:', error);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleProcessQueued = async () => {
+        const queuedCount = documents.filter(d => d.status === 'queued').length;
+        if (queuedCount === 0) {
+            alert('No queued documents to process');
+            return;
+        }
+
+        if (!confirm(`Process ${queuedCount} queued document(s)?`)) return;
+
+        setProcessing(true);
+        try {
+            const response = await documentApi.processQueued(engagement.id);
+            alert(`Processed: ${response.data.processed}, Failed: ${response.data.failed}`);
+            loadDocuments();
+        } catch (error) {
+            console.error('Failed to process documents:', error);
+            alert('Error processing documents: ' + (error.response?.data?.detail || error.message));
+        } finally {
+            setProcessing(false);
         }
     };
 
@@ -121,16 +144,29 @@ export default function DocumentList({ engagement, refreshTrigger }) {
                     Documents ({documents.length})
                 </h3>
                 
-                {selectedDocs.size > 0 && (
-                    <button
-                        onClick={handleBulkDelete}
-                        disabled={deleting}
-                        className="btn-secondary flex items-center gap-2 text-sm"
-                    >
-                        <Trash2 size={16} />
-                        Delete {selectedDocs.size} selected
-                    </button>
-                )}
+                <div className="flex gap-2">
+                    {documents.filter(d => d.status === 'queued').length > 0 && (
+                        <button
+                            onClick={handleProcessQueued}
+                            disabled={processing}
+                            className="btn-primary flex items-center gap-2 text-sm"
+                        >
+                            <Clock size={16} />
+                            {processing ? 'Processing...' : `Process ${documents.filter(d => d.status === 'queued').length} Queued`}
+                        </button>
+                    )}
+                    
+                    {selectedDocs.size > 0 && (
+                        <button
+                            onClick={handleBulkDelete}
+                            disabled={deleting}
+                            className="btn-secondary flex items-center gap-2 text-sm"
+                        >
+                            <Trash2 size={16} />
+                            Delete {selectedDocs.size} selected
+                        </button>
+                    )}
+                </div>
             </div>
 
             <div className="mb-3 pb-3 border-b flex items-center gap-2">

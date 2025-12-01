@@ -235,3 +235,87 @@ async def delete_document(
     await session.commit()
     
     return None
+
+
+@router.post("/process-queued", status_code=202)
+async def process_queued_documents(
+    engagement_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    """Process all queued documents for an engagement"""
+    # Get all queued documents
+    query = select(Document).where(
+        Document.engagement_id == engagement_id,
+        Document.status == "queued"
+    )
+    
+    result = await session.execute(query)
+    queued_docs = result.scalars().all()
+    
+    if not queued_docs:
+        return {"message": "No documents to process", "count": 0}
+    
+    processed = 0
+    failed = 0
+    
+    for document in queued_docs:
+        try:
+            document.status = "processing"
+            await session.commit()
+            
+            # Read file content
+            async with aiofiles.open(document.file_path, 'rb') as f:
+                file_content = await f.read()
+            
+            # Extract text
+            from io import BytesIO
+            extraction_result = doc_processor.extract_with_metadata(BytesIO(file_content), document.filename)
+            text = extraction_result['text']
+            pages_info = extraction_result['pages']
+            
+            if not text.strip():
+                raise ValueError("No text extracted from document")
+            
+            # Chunk text
+            chunks = doc_processor.chunk_text(
+                text,
+                metadata={
+                    "document_id": document.id,
+                    "filename": document.filename,
+                    "engagement_id": engagement_id
+                },
+                pages_info=pages_info
+            )
+            
+            # Generate embeddings
+            chunk_texts = [chunk["text"] for chunk in chunks]
+            embeddings = await embedding_service.embed_batch(chunk_texts)
+            
+            # Store in vector database
+            await vector_store.add_documents(
+                engagement_id=engagement_id,
+                document_id=document.id,
+                chunks=chunks,
+                embeddings=embeddings
+            )
+            
+            # Update document status
+            document.status = "completed"
+            document.chunk_count = len(chunks)
+            document.progress = 100
+            processed += 1
+            
+        except Exception as e:
+            logger.error(f"Failed to process document {document.id}: {str(e)}")
+            document.status = "failed"
+            document.error_message = str(e)
+            failed += 1
+        
+        await session.commit()
+    
+    return {
+        "message": f"Processing complete",
+        "total": len(queued_docs),
+        "processed": processed,
+        "failed": failed
+    }
