@@ -11,7 +11,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Form
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from app.db_session import get_db
+from app.db_session import get_session
 from app.database import QuestionTemplate
 from app.services.file_storage import FileStorage
 from app.routes.questions import _parse_questions_from_file
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/question-templates", tags=["question_templates"])
 
 
 @router.get("/", response_model=List[Dict[str, Any]])
-async def list_question_templates(db: Session = Depends(get_db)):
+async def list_question_templates(db: Session = Depends(get_session)):
     """Get all question templates, sorted by most recent first"""
     try:
         templates = db.query(QuestionTemplate).order_by(desc(QuestionTemplate.created_at)).all()
@@ -50,7 +50,7 @@ async def list_question_templates(db: Session = Depends(get_db)):
 
 
 @router.get("/{template_id}", response_model=Dict[str, Any])
-async def get_question_template(template_id: str, db: Session = Depends(get_db)):
+async def get_question_template(template_id: str, db: Session = Depends(get_session)):
     """Get a specific question template with parsed questions"""
     try:
         template = db.query(QuestionTemplate).filter(QuestionTemplate.id == template_id).first()
@@ -91,7 +91,7 @@ async def upload_question_template(
     name: str = Form(...),
     description: str = Form(None),
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_session)
 ):
     """Upload a new question template"""
     try:
@@ -171,7 +171,7 @@ async def upload_question_template(
 
 
 @router.delete("/{template_id}")
-async def delete_question_template(template_id: str, db: Session = Depends(get_db)):
+async def delete_question_template(template_id: str, db: Session = Depends(get_session)):
     """Delete a question template and its associated file"""
     try:
         template = db.query(QuestionTemplate).filter(QuestionTemplate.id == template_id).first()
@@ -211,7 +211,7 @@ async def delete_question_template(template_id: str, db: Session = Depends(get_d
 async def apply_template_to_engagement(
     template_id: str,
     engagement_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_session)
 ):
     """Apply a question template to an engagement by creating copies of the questions"""
     try:
