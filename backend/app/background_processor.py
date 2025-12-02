@@ -3,7 +3,7 @@ import asyncio
 import logging
 from sqlalchemy import select
 from app.database import Document
-from app.db_session import async_session_maker
+from app.db_session import AsyncSessionLocal
 from app.services.document_processor import DocumentProcessor
 from app.services.embedding_service import EmbeddingService
 from app.services.vector_store import get_vector_store
@@ -25,7 +25,7 @@ async def process_queued_documents_batch():
     """Process queued documents in small batches automatically"""
     while True:
         try:
-            async with async_session_maker() as session:
+            async with AsyncSessionLocal() as session:
                 # Get up to 3 queued documents at a time
                 query = select(Document).where(
                     Document.status == "queued"
