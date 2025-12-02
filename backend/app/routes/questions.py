@@ -177,6 +177,10 @@ async def ask_batch_questions_from_file(
     
     if not questions:
         raise HTTPException(status_code=400, detail="No questions found in file")
+    
+    # Process batch
+    batch_request = BatchQuestionRequest(questions=questions)
+    return await ask_batch_questions(engagement_id, batch_request, session)
 
 
 def _parse_questions_from_text(text: str) -> list[str]:
@@ -241,10 +245,6 @@ def _parse_questions_from_text(text: str) -> list[str]:
             cleaned_questions.append(q)
     
     return cleaned_questions
-    
-    # Process batch
-    batch_request = BatchQuestionRequest(questions=questions)
-    return await ask_batch_questions(engagement_id, batch_request, session)
 
 
 @router.get("/history", response_model=list[AnswerResponse])
