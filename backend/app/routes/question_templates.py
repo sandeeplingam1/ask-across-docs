@@ -14,7 +14,7 @@ from sqlalchemy import desc
 from app.db_session import get_session
 from app.database import QuestionTemplate
 from app.services.file_storage import FileStorage
-from app.routes.questions import _parse_questions_from_file
+from app.routes.questions import _parse_questions_from_text
 
 logger = logging.getLogger(__name__)
 
@@ -122,11 +122,21 @@ async def upload_question_template(
         # Parse questions from the file
         questions = []
         try:
-            # Reset file pointer and parse
-            from io import BytesIO
-            file_obj = BytesIO(file_content)
-            file_obj.name = file.filename
-            questions = await _parse_questions_from_file(file_obj, file.filename)
+            # Extract text based on file type
+            if file_ext == '.docx':
+                import io
+                from docx import Document as DocxDocument
+                doc = DocxDocument(io.BytesIO(file_content))
+                text = '\n'.join([paragraph.text for paragraph in doc.paragraphs if paragraph.text.strip()])
+            else:
+                # Handle text files
+                try:
+                    text = file_content.decode('utf-8')
+                except UnicodeDecodeError:
+                    text = file_content.decode('latin-1')
+            
+            # Parse questions using the existing parser
+            questions = _parse_questions_from_text(text)
             logger.info(f"Parsed {len(questions)} questions from template file")
         except Exception as parse_error:
             logger.warning(f"Failed to parse questions from template: {str(parse_error)}")
