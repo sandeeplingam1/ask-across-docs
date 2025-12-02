@@ -87,97 +87,31 @@ async def upload_documents(
                 file.filename
             )
             
-            # Create document record
+            # Create document record - always queue for manual processing
             document = Document(
                 engagement_id=engagement_id,
                 filename=file.filename,
                 file_type=doc_processor.get_file_type(file.filename),
                 file_size=file_size,
                 file_path=str(file_path),
-                status="queued" if settings.enable_background_processing else "processing"
+                status="queued"  # Always queue
             )
             
             session.add(document)
             await session.flush()  # Get document ID
             
-            # Process document
-            if settings.enable_background_processing:
-                # Queue for background processing
-                logger.info(f"Queuing document {document.id} for background processing")
-                background_tasks.add_task(
-                    background_processor.process_document,
-                    document_id=document.id,
-                    engagement_id=engagement_id,
-                    file_content=file_content,
-                    filename=file.filename,
-                    session=session
-                )
-                
-                results.append(UploadStatus(
-                    filename=file.filename,
-                    status="queued",
-                    message="Document queued for processing",
-                    document_id=document.id
-                ))
-                successful += 1
-            else:
-                # Process synchronously (legacy/dev mode)
-                try:
-                    from io import BytesIO
-                    extraction_result = doc_processor.extract_with_metadata(BytesIO(file_content), file.filename)
-                    text = extraction_result['text']
-                    pages_info = extraction_result['pages']
-                    
-                    chunks = doc_processor.chunk_text(
-                        text,
-                        metadata={
-                            "document_id": document.id,
-                            "filename": file.filename,
-                            "engagement_id": engagement_id
-                        },
-                        pages_info=pages_info
-                    )
-                    
-                    if not chunks:
-                        raise ValueError("No text extracted from document")
-                    
-                    chunk_texts = [chunk["text"] for chunk in chunks]
-                    embeddings = await embedding_service.embed_batch(chunk_texts)
-                    
-                    await vector_store.add_documents(
-                        engagement_id=engagement_id,
-                        document_id=document.id,
-                        chunks=chunks,
-                        embeddings=embeddings
-                    )
-                    
-                    document.status = "completed"
-                    document.chunk_count = len(chunks)
-                    document.progress = 100
-                    
-                    results.append(UploadStatus(
-                        filename=file.filename,
-                        status="success",
-                        message=f"Processed {len(chunks)} chunks",
-                        document_id=document.id
-                    ))
-                    successful += 1
-                    
-                except Exception as e:
-                    logger.error(f"Error processing document {document.id}: {str(e)}")
-                    document.status = "failed"
-                    document.error_message = str(e)
-                    
-                    results.append(UploadStatus(
-                        filename=file.filename,
-                        status="failed",
-                        message=f"Processing error: {str(e)}",
-                        document_id=document.id
-                    ))
-                    failed += 1
+            logger.info(f"Document {document.id} queued for processing")
             
+            results.append(UploadStatus(
+                filename=file.filename,
+                status="queued",
+                message="Document uploaded successfully. Click 'Process Queued' to generate embeddings.",
+                document_id=document.id
+            ))
+            successful += 1
+
         except Exception as e:
-            logger.error(f"Upload error for {file.filename}: {str(e)}")
+            logger.error(f"Upload error for {file.filename}: {str(e)}", exc_info=True)
             results.append(UploadStatus(
                 filename=file.filename,
                 status="failed",
@@ -193,6 +127,14 @@ async def upload_documents(
         failed=failed,
         results=results
     )
+
+
+# Legacy code path removed - keeping only queued pattern
+
+        except Exception as e:
+            # This except block is now unreachable but keeping for safety
+            if False:
+                pass  # Placeholder for removed legacy code
 
 
 @router.get("", response_model=list[DocumentResponse])

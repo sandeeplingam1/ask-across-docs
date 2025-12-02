@@ -1,10 +1,15 @@
 """FastAPI application entry point"""
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from app.config import settings
 from app.db_session import init_db
 from app.routes import engagements, documents, questions, document_files
+import logging
+import time
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -41,7 +46,39 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],  # Allow frontend to read all response headers
 )
+
+
+# Global error handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch all unhandled exceptions"""
+    logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "detail": "Internal server error",
+            "error": str(exc) if settings.is_development else "An unexpected error occurred"
+        }
+    )
+
+
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all requests"""
+    start_time = time.time()
+    logger.info(f"Request: {request.method} {request.url.path}")
+    
+    try:
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        logger.info(f"Response: {request.method} {request.url.path} - {response.status_code} ({process_time:.2f}s)")
+        return response
+    except Exception as e:
+        logger.error(f"Request failed: {request.method} {request.url.path} - {str(e)}", exc_info=True)
+        raise
 
 # Register routes
 app.include_router(engagements.router)

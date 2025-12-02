@@ -68,11 +68,6 @@ class Settings(BaseSettings):
             static_web_url = "https://blue-island-0b509160f.3.azurestaticapps.net"
             if static_web_url not in origins:
                 origins.append(static_web_url)
-            # Optionally add wildcards for Azure
-            if "https://*.azurestaticapps.net" not in origins:
-                origins.append("https://*.azurestaticapps.net")
-            if "https://*.azurecontainerapps.io" not in origins:
-                origins.append("https://*.azurecontainerapps.io")
         return origins
     
     @property
