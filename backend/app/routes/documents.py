@@ -129,14 +129,6 @@ async def upload_documents(
     )
 
 
-# Legacy code path removed - keeping only queued pattern
-
-        except Exception as e:
-            # This except block is now unreachable but keeping for safety
-            if False:
-                pass  # Placeholder for removed legacy code
-
-
 @router.get("", response_model=list[DocumentResponse])
 async def list_documents(
     engagement_id: str,
