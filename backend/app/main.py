@@ -24,6 +24,12 @@ async def lifespan(app: FastAPI):
     print(f"✅ CORS origins: {', '.join(settings.cors_origins_list[:3])}...")
     if settings.enable_telemetry:
         print("✅ Application Insights enabled")
+    
+    # Start background processor for queued documents
+    from app.background_processor import start_background_processor
+    start_background_processor()
+    print("✅ Background document processor started")
+    
     print("✅ API ready to accept requests")
     yield
     # Shutdown

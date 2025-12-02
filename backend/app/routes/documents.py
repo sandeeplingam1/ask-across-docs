@@ -87,78 +87,28 @@ async def upload_documents(
                 file.filename
             )
             
-            # Create document record
+            # Create document record - queue for processing
             document = Document(
                 engagement_id=engagement_id,
                 filename=file.filename,
                 file_type=doc_processor.get_file_type(file.filename),
                 file_size=file_size,
                 file_path=str(file_path),
-                status="processing"
+                status="queued"  # Queue initially for batch processing
             )
             
             session.add(document)
             await session.flush()  # Get document ID
             
-            logger.info(f"Processing document {document.id} automatically")
+            logger.info(f"Document {document.id} queued for processing")
             
-            # Process immediately and automatically
-            try:
-                from io import BytesIO
-                extraction_result = doc_processor.extract_with_metadata(BytesIO(file_content), file.filename)
-                text = extraction_result['text']
-                pages_info = extraction_result['pages']
-                
-                if not text.strip():
-                    raise ValueError("No text extracted from document")
-                
-                # Chunk text
-                chunks = doc_processor.chunk_text(
-                    text,
-                    metadata={
-                        "document_id": document.id,
-                        "filename": file.filename,
-                        "engagement_id": engagement_id
-                    },
-                    pages_info=pages_info
-                )
-                
-                # Generate embeddings
-                chunk_texts = [chunk["text"] for chunk in chunks]
-                embeddings = await embedding_service.embed_batch(chunk_texts)
-                
-                # Store in vector database
-                await vector_store.add_documents(
-                    engagement_id=engagement_id,
-                    document_id=document.id,
-                    chunks=chunks,
-                    embeddings=embeddings
-                )
-                
-                # Update status
-                document.status = "completed"
-                document.chunk_count = len(chunks)
-                document.progress = 100
-                
-                results.append(UploadStatus(
-                    filename=file.filename,
-                    status="success",
-                    message=f"Processed {len(chunks)} chunks",
-                    document_id=document.id
-                ))
-                successful += 1
-                
-            except Exception as e:
-                logger.error(f"Processing error for {document.id}: {str(e)}", exc_info=True)
-                document.status = "failed"
-                document.error_message = str(e)
-                results.append(UploadStatus(
-                    filename=file.filename,
-                    status="failed",
-                    message=f"Processing error: {str(e)}",
-                    document_id=document.id
-                ))
-                failed += 1
+            results.append(UploadStatus(
+                filename=file.filename,
+                status="queued",
+                message="Uploaded successfully. Processing will start automatically.",
+                document_id=document.id
+            ))
+            successful += 1
 
         except Exception as e:
             logger.error(f"Upload error for {file.filename}: {str(e)}", exc_info=True)
