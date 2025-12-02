@@ -172,11 +172,75 @@ async def ask_batch_questions_from_file(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to read file: {str(e)}")
     
-    # Split by lines and filter empty
-    questions = [q.strip() for q in text.split('\n') if q.strip()]
+    # Intelligently parse questions from any format
+    questions = _parse_questions_from_text(text)
     
     if not questions:
         raise HTTPException(status_code=400, detail="No questions found in file")
+
+
+def _parse_questions_from_text(text: str) -> list[str]:
+    """Parse questions from text supporting multiple formats:
+    - One question per line
+    - Numbered questions (1. 2. 3. or 1) 2) 3))
+    - Bullet points (- * •)
+    - Multi-line questions (ends with ? or has sub-questions a) b) c))
+    """
+    import re
+    
+    # Remove excessive whitespace
+    text = re.sub(r'\n\s*\n+', '\n\n', text)
+    
+    questions = []
+    
+    # Try to detect format
+    # Pattern 1: Numbered questions (1. Question? or 1) Question?)
+    numbered_pattern = r'^\s*\d+[.):]\s*(.+?)(?=^\s*\d+[.):]|\Z)'
+    numbered_matches = re.findall(numbered_pattern, text, re.MULTILINE | re.DOTALL)
+    
+    if numbered_matches:
+        for match in numbered_matches:
+            question = match.strip()
+            if question:
+                # Handle sub-questions (a), b), etc.) - keep as one question
+                questions.append(question)
+    else:
+        # Pattern 2: Bullet points (-, *, •)
+        bullet_pattern = r'^\s*[-*•]\s*(.+?)(?=^\s*[-*•]|\Z)'
+        bullet_matches = re.findall(bullet_pattern, text, re.MULTILINE | re.DOTALL)
+        
+        if bullet_matches:
+            for match in bullet_matches:
+                question = match.strip()
+                if question:
+                    questions.append(question)
+        else:
+            # Pattern 3: Questions ending with ?
+            question_pattern = r'([^?]+\?)'
+            question_matches = re.findall(question_pattern, text)
+            
+            if question_matches:
+                for match in question_matches:
+                    question = match.strip()
+                    if len(question) > 10:  # Avoid very short fragments
+                        questions.append(question)
+            else:
+                # Pattern 4: Fallback - split by double newlines (paragraphs)
+                paragraphs = text.split('\n\n')
+                for para in paragraphs:
+                    para = para.strip()
+                    if para and len(para) > 10:
+                        questions.append(para)
+    
+    # Clean up questions
+    cleaned_questions = []
+    for q in questions:
+        # Remove extra whitespace and normalize
+        q = ' '.join(q.split())
+        if q and len(q) > 5:
+            cleaned_questions.append(q)
+    
+    return cleaned_questions
     
     # Process batch
     batch_request = BatchQuestionRequest(questions=questions)
