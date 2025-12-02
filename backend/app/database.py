@@ -56,3 +56,20 @@ class QuestionAnswer(Base):
     sources = Column(Text, nullable=True)  # JSON string of source chunks
     confidence = Column(String(20), default="high")
     answered_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class QuestionTemplate(Base):
+    """Reusable question templates (global, not tied to engagements)"""
+    __tablename__ = "question_templates"
+    
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    name = Column(String(200), nullable=False)  # e.g., "IT Governance Questions"
+    description = Column(Text, nullable=True)
+    filename = Column(String(500), nullable=False)  # Original file name
+    file_path = Column(String(1000), nullable=False)  # Path to stored file
+    file_type = Column(String(100), nullable=False)  # .docx, .txt
+    file_size = Column(Integer, nullable=False)
+    question_count = Column(Integer, default=0)  # Number of questions parsed
+    questions_json = Column(Text, nullable=True)  # JSON array of parsed questions
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())

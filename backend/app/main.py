@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from app.config import settings
 from app.db_session import init_db
-from app.routes import engagements, documents, questions, document_files
+from app.routes import engagements, documents, questions, document_files, question_templates
 import logging
 import time
 
@@ -91,6 +91,7 @@ app.include_router(engagements.router)
 app.include_router(documents.router)
 app.include_router(questions.router)
 app.include_router(document_files.router)
+app.include_router(question_templates.router)
 
 
 @app.get("/")
