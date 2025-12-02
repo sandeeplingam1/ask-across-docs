@@ -7,7 +7,10 @@ from app.database import Engagement, Document
 from app.models import EngagementCreate, EngagementResponse
 from app.services.vector_store import get_vector_store
 from datetime import datetime
+import os
+import logging
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/engagements", tags=["engagements"])
 
 
@@ -127,18 +130,36 @@ async def delete_engagement(
     engagement_id: str,
     session: AsyncSession = Depends(get_session)
 ):
-    """Delete an engagement and all its documents"""
+    """Delete an engagement and all its documents, blob files, and vector embeddings"""
     engagement = await session.get(Engagement, engagement_id)
     
     if not engagement:
         raise HTTPException(status_code=404, detail="Engagement not found")
     
-    # Delete from vector store
+    # Get all documents for this engagement to delete their files
+    doc_query = select(Document).where(Document.engagement_id == engagement_id)
+    result = await session.execute(doc_query)
+    documents = result.scalars().all()
+    
+    # Delete physical files from disk/blob storage
+    deleted_files = 0
+    for doc in documents:
+        if doc.file_path and os.path.exists(doc.file_path):
+            try:
+                os.remove(doc.file_path)
+                deleted_files += 1
+                logger.info(f"Deleted file: {doc.file_path}")
+            except Exception as e:
+                logger.error(f"Failed to delete file {doc.file_path}: {str(e)}")
+    
+    # Delete from vector store (AI Search)
     vector_store = get_vector_store()
     await vector_store.delete_collection(engagement_id)
+    logger.info(f"Deleted vector collection for engagement: {engagement_id}")
     
     # Delete from database (cascade will delete documents and Q&A history)
     await session.delete(engagement)
     await session.commit()
     
+    logger.info(f"Deleted engagement {engagement_id} with {len(documents)} documents ({deleted_files} files)")
     return None
