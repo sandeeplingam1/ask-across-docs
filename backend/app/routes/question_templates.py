@@ -8,8 +8,8 @@ import json
 from datetime import datetime
 from typing import List, Dict, Any
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Form
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, delete, desc
 
 from app.db_session import get_session
 from app.database import QuestionTemplate
@@ -18,18 +18,20 @@ from app.routes.questions import _parse_questions_from_text
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/question-templates", tags=["question_templates"])
+router = APIRouter(prefix="/api/question-templates", tags=["question_templates"])
 
 
 @router.get("/", response_model=List[Dict[str, Any]])
-async def list_question_templates(db: Session = Depends(get_session)):
+async def list_question_templates(session: AsyncSession = Depends(get_session)):
     """Get all question templates, sorted by most recent first"""
     try:
-        templates = db.query(QuestionTemplate).order_by(desc(QuestionTemplate.created_at)).all()
+        query = select(QuestionTemplate).order_by(desc(QuestionTemplate.created_at))
+        result = await session.execute(query)
+        templates = result.scalars().all()
         
-        result = []
+        template_list = []
         for template in templates:
-            result.append({
+            template_list.append({
                 "id": template.id,
                 "name": template.name,
                 "description": template.description,
@@ -41,8 +43,8 @@ async def list_question_templates(db: Session = Depends(get_session)):
                 "updated_at": template.updated_at.isoformat() if template.updated_at else None
             })
         
-        logger.info(f"Retrieved {len(result)} question templates")
-        return result
+        logger.info(f"Retrieved {len(template_list)} question templates")
+        return template_list
         
     except Exception as e:
         logger.error(f"Error listing question templates: {str(e)}")
@@ -50,10 +52,12 @@ async def list_question_templates(db: Session = Depends(get_session)):
 
 
 @router.get("/{template_id}", response_model=Dict[str, Any])
-async def get_question_template(template_id: str, db: Session = Depends(get_session)):
+async def get_question_template(template_id: str, session: AsyncSession = Depends(get_session)):
     """Get a specific question template with parsed questions"""
     try:
-        template = db.query(QuestionTemplate).filter(QuestionTemplate.id == template_id).first()
+        query = select(QuestionTemplate).filter(QuestionTemplate.id == template_id)
+        result = await session.execute(query)
+        template = result.scalar_one_or_none()
         
         if not template:
             raise HTTPException(status_code=404, detail="Question template not found")
@@ -91,7 +95,7 @@ async def upload_question_template(
     name: str = Form(...),
     description: str = Form(None),
     file: UploadFile = File(...),
-    db: Session = Depends(get_session)
+    session: AsyncSession = Depends(get_session)
 ):
     """Upload a new question template"""
     try:
@@ -154,9 +158,9 @@ async def upload_question_template(
             questions_json=json.dumps(questions) if questions else None
         )
         
-        db.add(template)
-        db.commit()
-        db.refresh(template)
+        session.add(template)
+        await session.commit()
+        await session.refresh(template)
         
         logger.info(f"Created question template: {template.id} - {name}")
         
@@ -176,15 +180,17 @@ async def upload_question_template(
         raise
     except Exception as e:
         logger.error(f"Error uploading question template: {str(e)}")
-        db.rollback()
+        await session.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to upload template: {str(e)}")
 
 
 @router.delete("/{template_id}")
-async def delete_question_template(template_id: str, db: Session = Depends(get_session)):
+async def delete_question_template(template_id: str, session: AsyncSession = Depends(get_session)):
     """Delete a question template and its associated file"""
     try:
-        template = db.query(QuestionTemplate).filter(QuestionTemplate.id == template_id).first()
+        query = select(QuestionTemplate).filter(QuestionTemplate.id == template_id)
+        result = await session.execute(query)
+        template = result.scalar_one_or_none()
         
         if not template:
             raise HTTPException(status_code=404, detail="Question template not found")
@@ -199,8 +205,8 @@ async def delete_question_template(template_id: str, db: Session = Depends(get_s
             # Continue with DB deletion anyway
         
         # Delete from database
-        db.delete(template)
-        db.commit()
+        await session.delete(template)
+        await session.commit()
         
         logger.info(f"Deleted question template: {template_id}")
         
@@ -213,7 +219,7 @@ async def delete_question_template(template_id: str, db: Session = Depends(get_s
         raise
     except Exception as e:
         logger.error(f"Error deleting question template {template_id}: {str(e)}")
-        db.rollback()
+        await session.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to delete template: {str(e)}")
 
 
@@ -221,19 +227,25 @@ async def delete_question_template(template_id: str, db: Session = Depends(get_s
 async def apply_template_to_engagement(
     template_id: str,
     engagement_id: str,
-    db: Session = Depends(get_session)
+    session: AsyncSession = Depends(get_session)
 ):
     """Apply a question template to an engagement by creating copies of the questions"""
     try:
         from app.database import Engagement, QuestionAnswer
         
         # Verify template exists
-        template = db.query(QuestionTemplate).filter(QuestionTemplate.id == template_id).first()
+        template_query = select(QuestionTemplate).filter(QuestionTemplate.id == template_id)
+        template_result = await session.execute(template_query)
+        template = template_result.scalar_one_or_none()
+        
         if not template:
             raise HTTPException(status_code=404, detail="Question template not found")
         
         # Verify engagement exists
-        engagement = db.query(Engagement).filter(Engagement.id == engagement_id).first()
+        engagement_query = select(Engagement).filter(Engagement.id == engagement_id)
+        engagement_result = await session.execute(engagement_query)
+        engagement = engagement_result.scalar_one_or_none()
+        
         if not engagement:
             raise HTTPException(status_code=404, detail="Engagement not found")
         
@@ -257,10 +269,10 @@ async def apply_template_to_engagement(
                 answer="",  # Empty answer - to be filled by user
                 confidence="pending"
             )
-            db.add(qa)
+            session.add(qa)
             created_count += 1
         
-        db.commit()
+        await session.commit()
         
         logger.info(f"Applied template {template_id} to engagement {engagement_id}: {created_count} questions")
         
@@ -274,5 +286,5 @@ async def apply_template_to_engagement(
         raise
     except Exception as e:
         logger.error(f"Error applying template {template_id} to engagement {engagement_id}: {str(e)}")
-        db.rollback()
+        await session.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to apply template: {str(e)}")
