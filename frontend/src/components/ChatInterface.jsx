@@ -1,0 +1,230 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Send, Loader2, FileText, AlertCircle } from 'lucide-react';
+import api from '../api';
+
+export default function ChatInterface({ engagement }) {
+    const [messages, setMessages] = useState([]);
+    const [inputValue, setInputValue] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [loadingHistory, setLoadingHistory] = useState(true);
+    const messagesEndRef = useRef(null);
+    const inputRef = useRef(null);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    };
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages]);
+
+    useEffect(() => {
+        loadHistory();
+    }, [engagement.id]);
+
+    const loadHistory = async () => {
+        try {
+            setLoadingHistory(true);
+            const history = await api.getQAHistory(engagement.id);
+            
+            // Convert history to chat messages format
+            const chatMessages = history
+                .filter(item => item.confidence !== 'pending') // Exclude pending questions
+                .map(item => ([
+                    {
+                        type: 'question',
+                        text: item.question,
+                        timestamp: item.answered_at
+                    },
+                    {
+                        type: 'answer',
+                        text: item.answer,
+                        confidence: item.confidence,
+                        sources: item.sources,
+                        timestamp: item.answered_at
+                    }
+                ]))
+                .flat();
+
+            setMessages(chatMessages);
+        } catch (error) {
+            console.error('Failed to load history:', error);
+        } finally {
+            setLoadingHistory(false);
+        }
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!inputValue.trim() || isLoading) return;
+
+        const question = inputValue.trim();
+        setInputValue('');
+        setIsLoading(true);
+
+        // Add user question immediately
+        setMessages(prev => [...prev, {
+            type: 'question',
+            text: question,
+            timestamp: new Date().toISOString()
+        }]);
+
+        try {
+            const answer = await api.askQuestion(engagement.id, question);
+            
+            // Add answer
+            setMessages(prev => [...prev, {
+                type: 'answer',
+                text: answer.answer,
+                confidence: answer.confidence,
+                sources: answer.sources,
+                timestamp: new Date().toISOString()
+            }]);
+        } catch (error) {
+            console.error('Failed to get answer:', error);
+            setMessages(prev => [...prev, {
+                type: 'error',
+                text: 'Sorry, I encountered an error while processing your question. Please try again.',
+                timestamp: new Date().toISOString()
+            }]);
+        } finally {
+            setIsLoading(false);
+            inputRef.current?.focus();
+        }
+    };
+
+    const getConfidenceColor = (confidence) => {
+        switch (confidence) {
+            case 'high': return 'text-green-600 bg-green-50';
+            case 'medium': return 'text-yellow-600 bg-yellow-50';
+            case 'low': return 'text-red-600 bg-red-50';
+            default: return 'text-gray-600 bg-gray-50';
+        }
+    };
+
+    if (loadingHistory) {
+        return (
+            <div className="flex items-center justify-center h-96">
+                <Loader2 className="animate-spin text-primary-600" size={32} />
+                <span className="ml-2 text-gray-600">Loading conversation...</span>
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex flex-col h-[calc(100vh-16rem)] bg-white rounded-lg shadow-sm border border-gray-200">
+            {/* Messages Area */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {messages.length === 0 ? (
+                    <div className="text-center py-12">
+                        <FileText size={48} className="mx-auto text-gray-300 mb-4" />
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">
+                            Start a conversation
+                        </h3>
+                        <p className="text-gray-600">
+                            Ask questions about {engagement.name} documents
+                        </p>
+                    </div>
+                ) : (
+                    messages.map((msg, idx) => (
+                        <div key={idx} className={`flex ${msg.type === 'question' ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-3xl ${msg.type === 'question' ? 'w-auto' : 'w-full'}`}>
+                                {msg.type === 'question' && (
+                                    <div className="bg-primary-600 text-white rounded-2xl rounded-tr-sm px-4 py-3">
+                                        <p className="whitespace-pre-wrap">{msg.text}</p>
+                                    </div>
+                                )}
+
+                                {msg.type === 'answer' && (
+                                    <div className="bg-gray-50 rounded-2xl rounded-tl-sm px-4 py-3 space-y-3">
+                                        {/* Confidence Badge */}
+                                        {msg.confidence && (
+                                            <div className="flex items-center gap-2">
+                                                <span className={`text-xs font-medium px-2 py-1 rounded-full ${getConfidenceColor(msg.confidence)}`}>
+                                                    {msg.confidence.toUpperCase()} CONFIDENCE
+                                                </span>
+                                            </div>
+                                        )}
+
+                                        {/* Answer Text */}
+                                        <p className="text-gray-900 whitespace-pre-wrap leading-relaxed">
+                                            {msg.text}
+                                        </p>
+
+                                        {/* Sources */}
+                                        {msg.sources && msg.sources.length > 0 && (
+                                            <div className="pt-3 border-t border-gray-200">
+                                                <p className="text-xs font-medium text-gray-600 mb-2">
+                                                    📄 Sources:
+                                                </p>
+                                                <div className="space-y-1">
+                                                    {msg.sources.slice(0, 3).map((source, i) => (
+                                                        <div key={i} className="text-xs text-gray-600">
+                                                            • {source.filename} {source.page && `(Page ${source.page})`}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {msg.type === 'error' && (
+                                    <div className="bg-red-50 border border-red-200 rounded-2xl rounded-tl-sm px-4 py-3">
+                                        <div className="flex items-start gap-2">
+                                            <AlertCircle size={16} className="text-red-600 mt-0.5 flex-shrink-0" />
+                                            <p className="text-red-800 text-sm">{msg.text}</p>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ))
+                )}
+
+                {/* Loading Indicator */}
+                {isLoading && (
+                    <div className="flex justify-start">
+                        <div className="bg-gray-50 rounded-2xl rounded-tl-sm px-4 py-3">
+                            <div className="flex items-center gap-2 text-gray-600">
+                                <Loader2 className="animate-spin" size={16} />
+                                <span className="text-sm">Thinking...</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                <div ref={messagesEndRef} />
+            </div>
+
+            {/* Input Area */}
+            <div className="border-t border-gray-200 p-4 bg-gray-50">
+                <form onSubmit={handleSubmit} className="flex gap-2">
+                    <input
+                        ref={inputRef}
+                        type="text"
+                        value={inputValue}
+                        onChange={(e) => setInputValue(e.target.value)}
+                        placeholder="Ask a question about the documents..."
+                        className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        disabled={isLoading}
+                    />
+                    <button
+                        type="submit"
+                        disabled={!inputValue.trim() || isLoading}
+                        className="px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                        {isLoading ? (
+                            <Loader2 className="animate-spin" size={20} />
+                        ) : (
+                            <Send size={20} />
+                        )}
+                    </button>
+                </form>
+                <p className="text-xs text-gray-500 mt-2 text-center">
+                    Press Enter to send. Answers are generated from uploaded documents.
+                </p>
+            </div>
+        </div>
+    );
+}

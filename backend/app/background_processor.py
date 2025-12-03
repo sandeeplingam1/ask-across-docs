@@ -46,9 +46,10 @@ async def process_queued_documents_batch():
                         document.status = "processing"
                         await session.commit()
                         
-                        # Read file content
-                        async with aiofiles.open(document.file_path, 'rb') as f:
-                            file_content = await f.read()
+                        # Download file from blob storage
+                        from app.services.file_storage import get_file_storage
+                        file_storage = get_file_storage()
+                        file_content = await file_storage.get_file(document.file_path)
                         
                         # Extract text
                         extraction_result = doc_processor.extract_with_metadata(

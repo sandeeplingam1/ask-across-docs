@@ -151,12 +151,40 @@ async def ask_batch_questions_from_file(
     
     try:
         if filename.endswith('.docx'):
-            # Handle Word documents
+            # Handle Word documents - preserve indentation hierarchy
             import io
             from docx import Document as DocxDocument
             
             doc = DocxDocument(io.BytesIO(content))
-            text = '\n'.join([paragraph.text for paragraph in doc.paragraphs if paragraph.text.strip()])
+            lines = []
+            for paragraph in doc.paragraphs:
+                if paragraph.text.strip():
+                    indent_level = 0
+                    
+                    # Always try to detect indentation - don't restrict by style
+                    if hasattr(paragraph, '_element') and hasattr(paragraph._element, 'pPr'):
+                        pPr = paragraph._element.pPr
+                        if pPr is not None:
+                            # Method 1: Check numbering level (most reliable for bullets)
+                            if hasattr(pPr, 'numPr') and pPr.numPr is not None:
+                                ilvl = pPr.numPr.find('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ilvl')
+                                if ilvl is not None and hasattr(ilvl, 'val'):
+                                    # Level 0 = top-level, Level 1+ = nested
+                                    level = int(ilvl.val)
+                                    indent_level = level * 4  # 4 spaces per level
+                            
+                            # Method 2: Check left indentation (fallback)
+                            if indent_level == 0 and hasattr(pPr, 'ind') and pPr.ind is not None:
+                                if hasattr(pPr.ind, 'left') and pPr.ind.left is not None:
+                                    indent_twips = int(pPr.ind.left)
+                                    # Convert to spaces (roughly 720 twips = 4 spaces)
+                                    indent_level = (indent_twips // 720) * 4
+                    
+                    # Add indentation to text
+                    indented_text = ' ' * indent_level + paragraph.text
+                    lines.append(indented_text)
+            
+            text = '\n'.join(lines)
         elif filename.endswith('.doc'):
             # Legacy Word documents not supported - inform user
             raise HTTPException(
@@ -185,18 +213,19 @@ async def ask_batch_questions_from_file(
 
 def _parse_questions_from_text(text: str) -> list[str]:
     """
-    Parse audit questions from text with hierarchy awareness.
+    Parse audit questions from text with EXACT human auditor understanding.
     
-    Supports any formatting style:
-    - Bullets: •, -, *, o •
-    - Numbering: 1., 1), 1-, I., A.
+    CRITICAL RULES:
+    1. Ignore document titles/headings (lines without ? or : that don't contain question words)
+    2. Multiple ? in same paragraph = ONE question (continuation, not separate items)
+    3. Parent question ending with : + sub-bullets = ONE combined question
+    4. Sub-bullets NEVER become standalone questions
+    5. Short labels (< 5 words, no question structure) are IGNORED
+    
+    Supported formats:
+    - Bullets: •, -, *, o, ◦
+    - Numbering: 1., 1), 1:, 1-, I., A.), a.
     - Indentation-based hierarchy
-    - Multi-line parent questions with sub-points
-    
-    Logic:
-    - Parent questions: Full questions (ends with ? or :, starts with question words, or is long)
-    - Sub-points: Indented, short fragments, or bullets under a parent
-    - Returns structured questions with sub-points included in the text
     """
     import re
     
@@ -205,102 +234,190 @@ def _parse_questions_from_text(text: str) -> list[str]:
     current_question = None
     current_subpoints = []
     
-    # Question indicators
-    question_starters = r'^(does|has|is|are|was|were|do|did|have|can|could|should|would|will|' \
-                       r'provide|describe|explain|list|identify|document|what|when|where|who|why|how)'
+    # Question word patterns (case-insensitive)
+    question_words = r'\b(does|has|is|are|was|were|do|did|have|can|could|should|would|will|' \
+                     r'provide|describe|explain|list|identify|document|what|when|where|who|why|how)\b'
+    
+    # Bullet patterns (comprehensive) - handle bullets with space OR tab OR multiple bullets
+    bullet_pattern = r'^[-*•o◦○▪▫✓✔➢➣➤►▶]+[\s\t]+'
+    
+    # Number patterns: 1. 1) 1: 1- I. A.) a. etc.
+    number_pattern = r'^(\d+[.):\-]|[A-Z][.):]|[a-z][.):]|[ivxIVX]+[.):])\s+'
     
     for line in lines:
         if not line.strip():
             continue
-            
-        original_line = line
+        
         stripped = line.strip()
         leading_spaces = len(line) - len(line.lstrip())
         
-        # Remove common bullet/number prefixes for analysis
-        cleaned = re.sub(r'^[-*•o]\s*', '', stripped)
-        cleaned = re.sub(r'^\d+[.):\-]\s*', '', cleaned)
-        cleaned = re.sub(r'^[A-Z][.)]\s*', '', cleaned)
-        cleaned = re.sub(r'^[ivxIVX]+[.)]\s*', '', cleaned)
-        cleaned = stripped  # Keep original for bullet detection
+        # Clean line by removing numbering/bullets for content analysis
+        cleaned = re.sub(number_pattern, '', stripped)
+        cleaned = re.sub(bullet_pattern, '', cleaned)
+        cleaned = cleaned.strip()
         
-        # Detect if this is a parent question
-        is_parent_question = False
+        # Word count for filtering
+        word_count = len(cleaned.split())
         
-        # Check 1: Ends with ? or : (strong indicator)
-        if stripped.endswith('?') or stripped.endswith(':'):
-            is_parent_question = True
+        # ═══════════════════════════════════════════════════════════
+        # RULE 1: IGNORE titles, headings, and short labels
+        # ═══════════════════════════════════════════════════════════
+        # A line is a title/heading if:
+        # - No ? or : at the end
+        # - Doesn't start with question words
+        # - Too short (< 5 words)
+        # - No question structure
+        # BUT: Don't apply title filtering if we have an active parent and line could be a sub-point
         
-        # Check 2: Starts with question words and is substantial
-        elif re.match(question_starters, stripped, re.IGNORECASE) and len(cleaned) > 20:
-            is_parent_question = True
+        has_question_mark = '?' in stripped
+        ends_with_colon = stripped.endswith(':')
+        ends_with_question = stripped.endswith('?')
+        starts_with_question_word = re.search(question_words, cleaned, re.IGNORECASE) is not None
         
-        # Check 3: Long enough to be a complete question (>40 chars) and not heavily indented
-        elif len(cleaned) > 40 and leading_spaces < 8:
-            is_parent_question = True
+        # Check if this could be a sub-point (nested bullet or heavy indent)
+        could_be_subpoint = bool(re.match(r'^[o◦▪▫]+[\s\t]+', stripped)) or leading_spaces >= 8
         
-        # Check 4: Contains question-like structure
-        elif '?' in stripped:
-            is_parent_question = True
+        # Ignore if it's clearly a title/label AND not a potential sub-point
+        is_title = (
+            not has_question_mark 
+            and not ends_with_colon 
+            and not starts_with_question_word
+            and word_count < 5
+            and not (current_question and could_be_subpoint)  # Don't ignore potential sub-points!
+        )
         
-        # Detect if this is a sub-point
+        # Also ignore very short fragments without structure (unless potential sub-point)
+        if word_count < 3 and not ends_with_question and not ends_with_colon and not could_be_subpoint:
+            is_title = True
+        
+        if is_title:
+            # Skip this line entirely - it's a heading/title
+            continue
+        
+        # ═══════════════════════════════════════════════════════════
+        # RULE 2: Detect if this is a SUB-POINT (bullet under parent)
+        # ═══════════════════════════════════════════════════════════
+        # A line is a sub-point if:
+        # - Indented 4+ spaces (secondary indentation)
+        # - Starts with nested bullet marker (o, ◦, ▪) NOT top-level (•, -)
+        # - Short fragment (< 40 chars) without own question structure
+        # - We already have a parent question active
+        
         is_subpoint = False
         
-        # Sub-point indicators:
-        # - Heavily indented (4+ spaces or 2+ tabs)
-        if leading_spaces >= 4:
-            is_subpoint = True
-        
-        # - Very short (< 40 chars) and starts with bullet/letter
-        elif len(cleaned) < 40 and re.match(r'^[o•\-\*]', stripped):
-            is_subpoint = True
-        
-        # - Fragment-like (no question structure, short)
-        elif len(cleaned) < 30 and not stripped.endswith(('?', ':', '.', ';')):
-            is_subpoint = True
-        
-        # Decision logic
-        if is_parent_question and not is_subpoint:
-            # Save previous question if exists
-            if current_question:
-                question_text = current_question
-                if current_subpoints:
-                    question_text += '\n' + '\n'.join([f"    - {sp}" for sp in current_subpoints])
-                questions.append(question_text)
+        if current_question:  # Only consider subpoints if we have an active parent
+            # Check for NESTED bullets (o, ◦) vs TOP-LEVEL bullets (•, -, *)
+            # o and ◦ are typically sub-bullets in Word
+            is_nested_bullet = bool(re.match(r'^[o◦▪▫]+[\s\t]+', stripped))
+            is_top_bullet = bool(re.match(r'^[•\-*]+[\s\t]+', stripped))
             
-            # Start new question
-            current_question = stripped
-            current_subpoints = []
+            # Check if parent ended with colon (expecting sub-list)
+            parent_expects_sublist = current_question.rstrip().endswith(':')
+            
+            # Check 1: Heavily indented (8+ spaces = definitely a sub-point)
+            if leading_spaces >= 8:
+                is_subpoint = True
+            
+            # Check 2: Nested bullet (o, ◦)
+            elif is_nested_bullet:
+                is_subpoint = True
+            
+            # Check 3: Moderate indent (4+ spaces) 
+            # If parent ends with :, ANY indented line is a sub-point
+            # Otherwise, only short fragments
+            elif leading_spaces >= 4:
+                if parent_expects_sublist:
+                    is_subpoint = True  # Parent expects list, all indented lines are sub-points
+                elif len(cleaned) < 40 and not ends_with_question:
+                    is_subpoint = True  # Short fragment
+            
+            # Check 4: Short fragment without question structure (even without indent)
+            elif len(cleaned) < 30 and not ends_with_question and not starts_with_question_word:
+                is_subpoint = True
         
-        elif current_question and is_subpoint:
-            # This is a sub-point of the current question
-            # Clean up the sub-point text
-            subpoint = re.sub(r'^[-*•o]\s*', '', stripped)
-            subpoint = re.sub(r'^\d+[.):\-]\s*', '', subpoint)
-            subpoint = re.sub(r'^[A-Z][.)]\s*', '', subpoint)
-            subpoint = subpoint.strip()
-            if subpoint:
-                current_subpoints.append(subpoint)
+        # ═══════════════════════════════════════════════════════════
+        # RULE 3: Detect if this is a PARENT QUESTION
+        # ═══════════════════════════════════════════════════════════
+        # A line is a parent question if:
+        # - Ends with ? or :
+        # - Starts with question words and substantial (> 20 chars)
+        # - NOT heavily indented (< 8 spaces)
+        # - NOT identified as a subpoint
         
-        elif current_question:
-            # Ambiguous line - if short, treat as subpoint; if long, new question
-            if len(cleaned) < 50:
-                subpoint = re.sub(r'^[-*•o]\s*', '', stripped).strip()
-                if subpoint:
-                    current_subpoints.append(subpoint)
+        is_parent = False
+        
+        if not is_subpoint:
+            # Strong indicators
+            if ends_with_question or ends_with_colon:
+                is_parent = True
+            
+            # Question word starter with substance
+            elif starts_with_question_word and len(cleaned) > 20 and leading_spaces < 8:
+                is_parent = True
+            
+            # Contains ? somewhere (could be multiple questions in one line)
+            elif has_question_mark and len(cleaned) > 15:
+                is_parent = True
+        
+        # ═══════════════════════════════════════════════════════════
+        # DECISION LOGIC
+        # ═══════════════════════════════════════════════════════════
+        
+        if is_parent:
+            # Check if this should EXTEND the current question (continuation)
+            # This handles: "Has X been updated? Does it identify Y?"
+            # Multiple ? in same numbered item = ONE question
+            
+            # Determine if this is a continuation or new question
+            # It's a continuation if:
+            # - No new numbering/bullet prefix
+            # - Same indentation level as current question
+            # - Current question exists
+            
+            has_own_numbering = re.match(number_pattern, stripped)
+            
+            if current_question and not has_own_numbering and leading_spaces >= 4:
+                # This is a CONTINUATION of the current question
+                # Add it to the current question text
+                current_question += ' ' + stripped
             else:
-                # Save previous and start new
-                question_text = current_question
-                if current_subpoints:
-                    question_text += '\n' + '\n'.join([f"    - {sp}" for sp in current_subpoints])
-                questions.append(question_text)
-                current_question = stripped
+                # This is a NEW parent question
+                # Save previous question if exists
+                if current_question:
+                    question_text = current_question
+                    if current_subpoints:
+                        question_text += '\n' + '\n'.join([f"    - {sp}" for sp in current_subpoints])
+                    questions.append(question_text)
+                
+                # Start new question - clean it by removing bullets/numbering
+                new_question = stripped
+                # Remove leading bullets and numbers
+                prev_q = ""
+                while prev_q != new_question:
+                    prev_q = new_question
+                    new_question = re.sub(number_pattern, '', new_question)
+                    new_question = re.sub(bullet_pattern, '', new_question)
+                    new_question = new_question.strip()
+                
+                current_question = new_question
                 current_subpoints = []
-        else:
-            # First line or standalone - treat as potential question
-            if len(cleaned) > 20:
-                current_question = stripped
-                current_subpoints = []
+        
+        elif is_subpoint and current_question:
+            # This is a sub-point belonging to the current parent question
+            # Clean up the sub-point text (remove bullets/numbering)
+            subpoint = stripped
+            
+            # Remove all leading bullets and numbers (handle nested: o • text)
+            # Keep removing until no more bullets/numbers at start
+            prev_subpoint = ""
+            while prev_subpoint != subpoint:
+                prev_subpoint = subpoint
+                subpoint = re.sub(number_pattern, '', subpoint)
+                subpoint = re.sub(bullet_pattern, '', subpoint)
+                subpoint = subpoint.strip()
+            
+            if subpoint and len(subpoint) > 2:  # Ignore trivial fragments
+                current_subpoints.append(subpoint)
     
     # Don't forget the last question
     if current_question:

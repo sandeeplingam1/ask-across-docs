@@ -130,7 +130,34 @@ async def upload_question_template(
                 import io
                 from docx import Document as DocxDocument
                 doc = DocxDocument(io.BytesIO(file_content))
-                text = '\n'.join([paragraph.text for paragraph in doc.paragraphs if paragraph.text.strip()])
+                
+                # Preserve indentation hierarchy from Word document
+                lines = []
+                for paragraph in doc.paragraphs:
+                    if paragraph.text.strip():
+                        indent_level = 0
+                        
+                        # Always try to detect indentation - don't restrict by style
+                        if hasattr(paragraph, '_element') and hasattr(paragraph._element, 'pPr'):
+                            pPr = paragraph._element.pPr
+                            if pPr is not None:
+                                # Method 1: Check numbering level (most reliable)
+                                if hasattr(pPr, 'numPr') and pPr.numPr is not None:
+                                    ilvl = pPr.numPr.find('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ilvl')
+                                    if ilvl is not None and hasattr(ilvl, 'val'):
+                                        level = int(ilvl.val)
+                                        indent_level = level * 4
+                                
+                                # Method 2: Check left indentation (fallback)
+                                if indent_level == 0 and hasattr(pPr, 'ind') and pPr.ind is not None:
+                                    if hasattr(pPr.ind, 'left') and pPr.ind.left is not None:
+                                        indent_twips = int(pPr.ind.left)
+                                        indent_level = (indent_twips // 720) * 4
+                        
+                        indented_text = ' ' * indent_level + paragraph.text
+                        lines.append(indented_text)
+                
+                text = '\n'.join(lines)
             else:
                 # Handle text files
                 try:
@@ -259,13 +286,14 @@ async def apply_template_to_engagement(
         if not questions:
             raise HTTPException(status_code=400, detail="Template has no questions to apply")
         
-        # Create placeholder Q&A records for each question
+        # Create placeholder Q&A records for each question AND process them
         created_count = 0
+        created_ids = []
         for question in questions:
             qa = QuestionAnswer(
                 engagement_id=engagement_id,
                 question=question,
-                answer="",  # Empty answer - to be filled by user
+                answer="",  # Will be filled by QA service
                 confidence="pending"
             )
             session.add(qa)
@@ -275,9 +303,40 @@ async def apply_template_to_engagement(
         
         logger.info(f"Applied template {template_id} to engagement {engagement_id}: {created_count} questions")
         
+        # Now trigger batch Q&A processing for all questions
+        try:
+            from app.services.qa_service import QAService
+            qa_service = QAService()
+            
+            # Process questions in batch
+            results = await qa_service.answer_batch(engagement_id, questions)
+            
+            # Update the Q&A records with answers
+            for i, result in enumerate(results):
+                if i < created_count:
+                    # Find the corresponding QA record
+                    qa_query = select(QuestionAnswer).filter(
+                        QuestionAnswer.engagement_id == engagement_id,
+                        QuestionAnswer.question == questions[i]
+                    ).order_by(QuestionAnswer.answered_at.desc()).limit(1)
+                    qa_result = await session.execute(qa_query)
+                    qa = qa_result.scalar_one_or_none()
+                    
+                    if qa:
+                        qa.answer = result.get("answer", "")
+                        qa.confidence = result.get("confidence", "low")
+                        qa.sources = json.dumps(result.get("sources", []))
+            
+            await session.commit()
+            logger.info(f"Generated answers for {len(results)} questions from template")
+            
+        except Exception as qa_error:
+            logger.warning(f"Failed to generate answers for template questions: {str(qa_error)}")
+            # Don't fail the whole operation - questions are still added
+        
         return {
             "success": True,
-            "message": f"Applied {created_count} questions from template '{template.name}' to engagement",
+            "message": f"Applied {created_count} questions from template '{template.name}' to engagement and generated answers",
             "questions_added": created_count
         }
         

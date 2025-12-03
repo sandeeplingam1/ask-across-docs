@@ -1,17 +1,14 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Upload as UploadIcon, MessageSquare, History } from 'lucide-react';
+import { ArrowLeft, Upload as UploadIcon, MessageSquare } from 'lucide-react';
 import DocumentUpload from '../components/DocumentUpload';
 import DocumentList from '../components/DocumentList';
-import QuestionInput from '../components/QuestionInput';
-import AnswerDisplay from '../components/AnswerDisplay';
-import QAHistory from '../components/QAHistory';
+import ChatInterface from '../components/ChatInterface';
 import QuestionTemplateList from '../components/QuestionTemplateList';
 import api from '../api';
 
 export default function EngagementView({ engagement, onBack }) {
-    const [activeTab, setActiveTab] = useState('documents');
+    const [activeTab, setActiveTab] = useState('chat');
     const [refreshDocuments, setRefreshDocuments] = useState(0);
-    const [currentAnswer, setCurrentAnswer] = useState(null);
     const [showTemplateSelector, setShowTemplateSelector] = useState(false);
     const [applyingTemplate, setApplyingTemplate] = useState(false);
 
@@ -20,8 +17,8 @@ export default function EngagementView({ engagement, onBack }) {
     };
 
     const handleAnswerReceived = (answer) => {
-        setCurrentAnswer(answer);
-        setActiveTab('qa');
+        // No longer needed - ChatInterface handles its own state
+        setActiveTab('chat');
     };
 
     const handleApplyTemplate = async (template) => {
@@ -32,9 +29,9 @@ export default function EngagementView({ engagement, onBack }) {
         try {
             setApplyingTemplate(true);
             const result = await api.applyTemplateToEngagement(template.id, engagement.id);
-            alert(result.message);
+            alert(result.message + '\n\nAnswers are being generated in the background.');
             setShowTemplateSelector(false);
-            setActiveTab('history'); // Switch to history to see the applied questions
+            // Don't switch tabs - template questions process silently
         } catch (err) {
             console.error('Failed to apply template:', err);
             alert('Failed to apply template. Please try again.');
@@ -104,10 +101,10 @@ export default function EngagementView({ engagement, onBack }) {
                     </button>
 
                     <button
-                        onClick={() => setActiveTab('qa')}
+                        onClick={() => setActiveTab('chat')}
                         className={`
               pb-3 px-1 border-b-2 font-medium transition-colors
-              ${activeTab === 'qa'
+              ${activeTab === 'chat'
                                 ? 'border-primary-600 text-primary-600'
                                 : 'border-transparent text-gray-500 hover:text-gray-700'
                             }
@@ -115,23 +112,7 @@ export default function EngagementView({ engagement, onBack }) {
                     >
                         <div className="flex items-center gap-2">
                             <MessageSquare size={20} />
-                            Q&A
-                        </div>
-                    </button>
-
-                    <button
-                        onClick={() => setActiveTab('history')}
-                        className={`
-              pb-3 px-1 border-b-2 font-medium transition-colors
-              ${activeTab === 'history'
-                                ? 'border-primary-600 text-primary-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700'
-                            }
-            `}
-                    >
-                        <div className="flex items-center gap-2">
-                            <History size={20} />
-                            History
+                            Chat
                         </div>
                     </button>
                 </nav>
@@ -152,34 +133,8 @@ export default function EngagementView({ engagement, onBack }) {
                     </div>
                 )}
 
-                {activeTab === 'qa' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <div>
-                            <QuestionInput
-                                engagement={engagement}
-                                onAnswerReceived={handleAnswerReceived}
-                            />
-                        </div>
-                        <div>
-                            {currentAnswer ? (
-                                <AnswerDisplay answer={currentAnswer} />
-                            ) : (
-                                <div className="card text-center py-12">
-                                    <MessageSquare size={48} className="mx-auto text-gray-400 mb-3" />
-                                    <p className="text-gray-600">
-                                        Ask a question to see answers here
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {activeTab === 'history' && (
-                    <QAHistory
-                        engagement={engagement}
-                        onViewAnswer={setCurrentAnswer}
-                    />
+                {activeTab === 'chat' && (
+                    <ChatInterface engagementId={engagement.id} />
                 )}
             </div>
         </div>
