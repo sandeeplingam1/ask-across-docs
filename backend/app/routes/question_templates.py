@@ -13,7 +13,7 @@ from sqlalchemy import select, delete, desc
 
 from app.db_session import get_session
 from app.database import QuestionTemplate
-from app.services.file_storage import FileStorage
+from app.services.file_storage import get_file_storage
 from app.routes.questions import _parse_questions_from_text
 
 logger = logging.getLogger(__name__)
@@ -113,15 +113,14 @@ async def upload_question_template(
         file_size = len(file_content)
         
         # Store file in blob storage
-        file_storage = FileStorage()
-        file_path = f"question-templates/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
-        blob_url = await file_storage.upload_file(
+        file_storage = get_file_storage()
+        blob_path = await file_storage.save_file(
             file_content=file_content,
-            filename=file.filename,
-            file_path=file_path
+            engagement_id="question-templates",
+            filename=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
         )
         
-        logger.info(f"Uploaded question template file to blob: {blob_url}")
+        logger.info(f"Uploaded question template file to blob: {blob_path}")
         
         # Parse questions from the file
         questions = []
@@ -151,7 +150,7 @@ async def upload_question_template(
             name=name,
             description=description,
             filename=file.filename,
-            file_path=file_path,
+            file_path=str(blob_path),
             file_type=file_ext,
             file_size=file_size,
             question_count=len(questions),
@@ -197,7 +196,7 @@ async def delete_question_template(template_id: str, session: AsyncSession = Dep
         
         # Delete file from blob storage
         try:
-            file_storage = FileStorage()
+            file_storage = get_file_storage()
             await file_storage.delete_file(template.file_path)
             logger.info(f"Deleted template file from blob: {template.file_path}")
         except Exception as file_error:
