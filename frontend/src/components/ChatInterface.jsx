@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Loader2, FileText, AlertCircle, Sparkles, Trash2 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import api from '../api';
 
 export default function ChatInterface({ engagementId }) {
