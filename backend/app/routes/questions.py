@@ -184,64 +184,137 @@ async def ask_batch_questions_from_file(
 
 
 def _parse_questions_from_text(text: str) -> list[str]:
-    """Parse questions from text supporting multiple formats:
-    - One question per line
-    - Numbered questions (1. 2. 3. or 1) 2) 3))
-    - Bullet points (- * •)
-    - Multi-line questions (ends with ? or has sub-questions a) b) c))
+    """
+    Parse audit questions from text with hierarchy awareness.
+    
+    Supports any formatting style:
+    - Bullets: •, -, *, o •
+    - Numbering: 1., 1), 1-, I., A.
+    - Indentation-based hierarchy
+    - Multi-line parent questions with sub-points
+    
+    Logic:
+    - Parent questions: Full questions (ends with ? or :, starts with question words, or is long)
+    - Sub-points: Indented, short fragments, or bullets under a parent
+    - Returns structured questions with sub-points included in the text
     """
     import re
     
-    # Remove excessive whitespace
-    text = re.sub(r'\n\s*\n+', '\n\n', text)
-    
+    lines = text.split('\n')
     questions = []
+    current_question = None
+    current_subpoints = []
     
-    # Try to detect format
-    # Pattern 1: Numbered questions (1. Question? or 1) Question?)
-    numbered_pattern = r'^\s*\d+[.):]\s*(.+?)(?=^\s*\d+[.):]|\Z)'
-    numbered_matches = re.findall(numbered_pattern, text, re.MULTILINE | re.DOTALL)
+    # Question indicators
+    question_starters = r'^(does|has|is|are|was|were|do|did|have|can|could|should|would|will|' \
+                       r'provide|describe|explain|list|identify|document|what|when|where|who|why|how)'
     
-    if numbered_matches:
-        for match in numbered_matches:
-            question = match.strip()
-            if question:
-                # Handle sub-questions (a), b), etc.) - keep as one question
-                questions.append(question)
-    else:
-        # Pattern 2: Bullet points (-, *, •)
-        bullet_pattern = r'^\s*[-*•]\s*(.+?)(?=^\s*[-*•]|\Z)'
-        bullet_matches = re.findall(bullet_pattern, text, re.MULTILINE | re.DOTALL)
-        
-        if bullet_matches:
-            for match in bullet_matches:
-                question = match.strip()
-                if question:
-                    questions.append(question)
-        else:
-            # Pattern 3: Questions ending with ?
-            question_pattern = r'([^?]+\?)'
-            question_matches = re.findall(question_pattern, text)
+    for line in lines:
+        if not line.strip():
+            continue
             
-            if question_matches:
-                for match in question_matches:
-                    question = match.strip()
-                    if len(question) > 10:  # Avoid very short fragments
-                        questions.append(question)
+        original_line = line
+        stripped = line.strip()
+        leading_spaces = len(line) - len(line.lstrip())
+        
+        # Remove common bullet/number prefixes for analysis
+        cleaned = re.sub(r'^[-*•o]\s*', '', stripped)
+        cleaned = re.sub(r'^\d+[.):\-]\s*', '', cleaned)
+        cleaned = re.sub(r'^[A-Z][.)]\s*', '', cleaned)
+        cleaned = re.sub(r'^[ivxIVX]+[.)]\s*', '', cleaned)
+        cleaned = stripped  # Keep original for bullet detection
+        
+        # Detect if this is a parent question
+        is_parent_question = False
+        
+        # Check 1: Ends with ? or : (strong indicator)
+        if stripped.endswith('?') or stripped.endswith(':'):
+            is_parent_question = True
+        
+        # Check 2: Starts with question words and is substantial
+        elif re.match(question_starters, stripped, re.IGNORECASE) and len(cleaned) > 20:
+            is_parent_question = True
+        
+        # Check 3: Long enough to be a complete question (>40 chars) and not heavily indented
+        elif len(cleaned) > 40 and leading_spaces < 8:
+            is_parent_question = True
+        
+        # Check 4: Contains question-like structure
+        elif '?' in stripped:
+            is_parent_question = True
+        
+        # Detect if this is a sub-point
+        is_subpoint = False
+        
+        # Sub-point indicators:
+        # - Heavily indented (4+ spaces or 2+ tabs)
+        if leading_spaces >= 4:
+            is_subpoint = True
+        
+        # - Very short (< 40 chars) and starts with bullet/letter
+        elif len(cleaned) < 40 and re.match(r'^[o•\-\*]', stripped):
+            is_subpoint = True
+        
+        # - Fragment-like (no question structure, short)
+        elif len(cleaned) < 30 and not stripped.endswith(('?', ':', '.', ';')):
+            is_subpoint = True
+        
+        # Decision logic
+        if is_parent_question and not is_subpoint:
+            # Save previous question if exists
+            if current_question:
+                question_text = current_question
+                if current_subpoints:
+                    question_text += '\n' + '\n'.join([f"    - {sp}" for sp in current_subpoints])
+                questions.append(question_text)
+            
+            # Start new question
+            current_question = stripped
+            current_subpoints = []
+        
+        elif current_question and is_subpoint:
+            # This is a sub-point of the current question
+            # Clean up the sub-point text
+            subpoint = re.sub(r'^[-*•o]\s*', '', stripped)
+            subpoint = re.sub(r'^\d+[.):\-]\s*', '', subpoint)
+            subpoint = re.sub(r'^[A-Z][.)]\s*', '', subpoint)
+            subpoint = subpoint.strip()
+            if subpoint:
+                current_subpoints.append(subpoint)
+        
+        elif current_question:
+            # Ambiguous line - if short, treat as subpoint; if long, new question
+            if len(cleaned) < 50:
+                subpoint = re.sub(r'^[-*•o]\s*', '', stripped).strip()
+                if subpoint:
+                    current_subpoints.append(subpoint)
             else:
-                # Pattern 4: Fallback - split by double newlines (paragraphs)
-                paragraphs = text.split('\n\n')
-                for para in paragraphs:
-                    para = para.strip()
-                    if para and len(para) > 10:
-                        questions.append(para)
+                # Save previous and start new
+                question_text = current_question
+                if current_subpoints:
+                    question_text += '\n' + '\n'.join([f"    - {sp}" for sp in current_subpoints])
+                questions.append(question_text)
+                current_question = stripped
+                current_subpoints = []
+        else:
+            # First line or standalone - treat as potential question
+            if len(cleaned) > 20:
+                current_question = stripped
+                current_subpoints = []
     
-    # Clean up questions
+    # Don't forget the last question
+    if current_question:
+        question_text = current_question
+        if current_subpoints:
+            question_text += '\n' + '\n'.join([f"    - {sp}" for sp in current_subpoints])
+        questions.append(question_text)
+    
+    # Final cleanup
     cleaned_questions = []
     for q in questions:
-        # Remove extra whitespace and normalize
-        q = ' '.join(q.split())
-        if q and len(q) > 5:
+        q = q.strip()
+        # Remove questions that are too short to be meaningful
+        if len(q) > 10:
             cleaned_questions.append(q)
     
     return cleaned_questions
