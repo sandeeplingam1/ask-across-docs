@@ -72,7 +72,7 @@ export const questionApi = {
 // Question Templates
 export const questionTemplateApi = {
     list: () => api.get('/question-templates/'),
-    get: (templateId) => api.get(`/question-templates/${templateId}/`),
+    get: (templateId) => api.get(`/question-templates/${templateId}`),
     upload: (name, description, file) => {
         const formData = new FormData();
         formData.append('name', name);
@@ -85,9 +85,9 @@ export const questionTemplateApi = {
             },
         });
     },
-    delete: (templateId) => api.delete(`/question-templates/${templateId}/`),
+    delete: (templateId) => api.delete(`/question-templates/${templateId}`),
     applyToEngagement: (templateId, engagementId) =>
-        api.post(`/question-templates/${templateId}/apply/${engagementId}/`),
+        api.post(`/question-templates/${templateId}/apply/${engagementId}`),
 };
 
 export default {
