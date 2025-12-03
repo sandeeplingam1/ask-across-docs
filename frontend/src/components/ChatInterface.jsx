@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Loader2, FileText, AlertCircle, Sparkles } from 'lucide-react';
+import { Send, Loader2, FileText, AlertCircle, Sparkles, Trash2 } from 'lucide-react';
 import api from '../api';
 
 export default function ChatInterface({ engagementId }) {
@@ -168,6 +168,22 @@ export default function ChatInterface({ engagementId }) {
         }
     };
 
+    const handleClearHistory = async () => {
+        if (!confirm('Clear all conversation history? This will delete all Q&A pairs for this engagement. This action cannot be undone.')) {
+            return;
+        }
+
+        try {
+            const result = await api.clearQuestionHistory(engagementId);
+            setMessages([]);
+            setLastMessageCount(0);
+            alert(result.message || 'Conversation history cleared!');
+        } catch (error) {
+            console.error('Failed to clear history:', error);
+            alert('Failed to clear history. Please try again.');
+        }
+    };
+
     const getConfidenceColor = (confidence) => {
         switch (confidence) {
             case 'high': return 'text-green-600 bg-green-50';
@@ -199,6 +215,23 @@ export default function ChatInterface({ engagementId }) {
 
     return (
         <div className="flex flex-col h-[calc(100vh-20rem)] bg-white rounded-lg shadow-sm border border-gray-200">
+            {/* Chat Header with Clear Button */}
+            {messages.length > 0 && (
+                <div className="border-b border-gray-200 px-4 py-3 bg-gray-50 flex justify-between items-center">
+                    <span className="text-sm text-gray-600">
+                        {messages.filter(m => m.type === 'question').length} questions in history
+                    </span>
+                    <button
+                        onClick={handleClearHistory}
+                        className="text-sm text-red-600 hover:text-red-700 flex items-center gap-1 hover:bg-red-50 px-3 py-1 rounded transition-colors"
+                        title="Clear conversation history"
+                    >
+                        <Trash2 size={16} />
+                        Clear History
+                    </button>
+                </div>
+            )}
+            
             {/* Messages Area */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6" style={{ scrollbarWidth: 'thin' }}>
                 {messages.length === 0 ? (

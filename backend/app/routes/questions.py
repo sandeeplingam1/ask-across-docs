@@ -474,3 +474,28 @@ async def get_qa_history(
         ))
     
     return responses
+
+
+@router.delete("/history")
+async def clear_qa_history(
+    engagement_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    """Clear all Q&A history for an engagement"""
+    # Verify engagement exists
+    engagement = await session.get(Engagement, engagement_id)
+    if not engagement:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+    
+    # Delete all Q&A records for this engagement
+    query = select(QuestionAnswer).where(QuestionAnswer.engagement_id == engagement_id)
+    result = await session.execute(query)
+    qa_records = result.scalars().all()
+    
+    count = len(qa_records)
+    for qa in qa_records:
+        await session.delete(qa)
+    
+    await session.commit()
+    
+    return {"message": f"Cleared {count} Q&A records", "deleted_count": count}

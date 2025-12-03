@@ -67,6 +67,9 @@ export const questionApi = {
 
     getHistory: (engagementId, limit = 50) =>
         api.get(`/engagements/${engagementId}/history`, { params: { limit } }),
+
+    clearHistory: (engagementId) =>
+        api.delete(`/engagements/${engagementId}/history`),
 };
 
 // Question Templates
@@ -114,6 +117,8 @@ export default {
         questionApi.batchAskFile(engagementId, file).then(res => res.data),
     getQuestionHistory: (engagementId, limit) =>
         questionApi.getHistory(engagementId, limit).then(res => res.data),
+    clearQuestionHistory: (engagementId) =>
+        questionApi.clearHistory(engagementId).then(res => res.data),
     
     listQuestionTemplates: () => questionTemplateApi.list().then(res => res.data),
     getQuestionTemplate: (templateId) =>
