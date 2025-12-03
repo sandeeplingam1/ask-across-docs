@@ -11,6 +11,7 @@ export default function ChatInterface({ engagementId }) {
     const [showTemplateSelector, setShowTemplateSelector] = useState(false);
     const [templates, setTemplates] = useState([]);
     const [loadingTemplates, setLoadingTemplates] = useState(false);
+    const [lastMessageCount, setLastMessageCount] = useState(0);
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
 
@@ -27,6 +28,44 @@ export default function ChatInterface({ engagementId }) {
             loadHistory();
         }
     }, [engagementId]);
+
+    // Auto-refresh history periodically to pick up new answers (but not while loading)
+    useEffect(() => {
+        if (!engagementId || isLoading) return;
+
+        const intervalId = setInterval(() => {
+            // Silently refresh in background
+            api.getQuestionHistory(engagementId).then(history => {
+                const chatMessages = history
+                    .filter(item => item.confidence !== 'pending')
+                    .map(item => ([
+                        {
+                            type: 'question',
+                            text: item.question,
+                            timestamp: item.answered_at
+                        },
+                        {
+                            type: 'answer',
+                            text: item.answer,
+                            confidence: item.confidence,
+                            sources: item.sources,
+                            timestamp: item.answered_at
+                        }
+                    ]))
+                    .flat();
+
+                // Only update if message count changed (new messages arrived)
+                if (chatMessages.length !== lastMessageCount) {
+                    setMessages(chatMessages);
+                    setLastMessageCount(chatMessages.length);
+                }
+            }).catch(err => {
+                console.error('Background refresh failed:', err);
+            });
+        }, 10000); // Refresh every 10 seconds
+
+        return () => clearInterval(intervalId);
+    }, [engagementId, isLoading, lastMessageCount]);
 
     const loadHistory = async () => {
         try {
@@ -54,6 +93,7 @@ export default function ChatInterface({ engagementId }) {
                 .flat();
 
             setMessages(chatMessages);
+            setLastMessageCount(chatMessages.length);
         } catch (error) {
             console.error('Failed to load history:', error);
             setError('Failed to load chat history. Please refresh the page.');

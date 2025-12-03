@@ -13,6 +13,21 @@ export default function DocumentList({ engagement, refreshTrigger }) {
         loadDocuments();
     }, [engagement.id, refreshTrigger]);
 
+    // Auto-refresh when there are processing or queued documents
+    useEffect(() => {
+        const hasProcessingDocs = documents.some(d => 
+            d.status === 'queued' || d.status === 'processing'
+        );
+
+        if (hasProcessingDocs) {
+            const intervalId = setInterval(() => {
+                loadDocuments();
+            }, 3000); // Check every 3 seconds
+
+            return () => clearInterval(intervalId);
+        }
+    }, [documents, engagement.id]);
+
     const loadDocuments = async () => {
         try {
             const response = await documentApi.list(engagement.id);
@@ -145,17 +160,6 @@ export default function DocumentList({ engagement, refreshTrigger }) {
                 </h3>
                 
                 <div className="flex gap-2">
-                    {documents.filter(d => d.status === 'queued').length > 0 && (
-                        <button
-                            onClick={handleProcessQueued}
-                            disabled={processing}
-                            className="btn-primary flex items-center gap-2 text-sm"
-                        >
-                            <Clock size={16} />
-                            {processing ? 'Processing...' : `Process ${documents.filter(d => d.status === 'queued').length} Queued`}
-                        </button>
-                    )}
-                    
                     {selectedDocs.size > 0 && (
                         <button
                             onClick={handleBulkDelete}
