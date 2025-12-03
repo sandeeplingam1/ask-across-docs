@@ -98,6 +98,9 @@ class QAService:
         
         context = "\n\n".join(context_parts)
         
+        # Initialize confidence to low by default
+        confidence = "low"
+        
         # 4. Build improved prompt for GPT
         system_prompt = """You are an expert AI assistant helping auditors analyze engagement documents. 
 
