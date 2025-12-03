@@ -27,6 +27,8 @@ export default function ChatInterface({ engagementId }) {
         if (engagementId) {
             loadHistory();
         }
+        // Focus input when component mounts
+        setTimeout(() => inputRef.current?.focus(), 300);
     }, [engagementId]);
 
     // Auto-refresh history periodically to pick up new answers (but not while loading)
@@ -38,6 +40,7 @@ export default function ChatInterface({ engagementId }) {
             api.getQuestionHistory(engagementId).then(history => {
                 const chatMessages = history
                     .filter(item => item.confidence !== 'pending')
+                    .sort((a, b) => new Date(a.answered_at) - new Date(b.answered_at)) // Sort oldest first
                     .map(item => ([
                         {
                             type: 'question',
@@ -73,9 +76,10 @@ export default function ChatInterface({ engagementId }) {
             setError(null);
             const history = await api.getQuestionHistory(engagementId);
             
-            // Convert history to chat messages format
+            // Convert history to chat messages format, sorted by timestamp (oldest first)
             const chatMessages = history
                 .filter(item => item.confidence !== 'pending') // Exclude pending questions
+                .sort((a, b) => new Date(a.answered_at) - new Date(b.answered_at)) // Sort oldest first
                 .map(item => ([
                     {
                         type: 'question',
@@ -137,7 +141,8 @@ export default function ChatInterface({ engagementId }) {
             }]);
         } finally {
             setIsLoading(false);
-            inputRef.current?.focus();
+            // Focus input after response
+            setTimeout(() => inputRef.current?.focus(), 100);
         }
     };
 
@@ -265,26 +270,43 @@ export default function ChatInterface({ engagementId }) {
                                             </div>
                                         )}
 
-                                        {/* Answer Text */}
-                                        <p className="text-gray-900 whitespace-pre-wrap leading-relaxed">
-                                            {msg.text}
-                                        </p>
+                                        {/* Answer Text - Render as Markdown */}
+                                        <div className="text-gray-900 leading-relaxed prose prose-sm max-w-none">
+                                            <ReactMarkdown
+                                                components={{
+                                                    p: ({node, ...props}) => <p className="mb-2" {...props} />,
+                                                    ul: ({node, ...props}) => <ul className="list-disc ml-4 mb-2 space-y-1" {...props} />,
+                                                    ol: ({node, ...props}) => <ol className="list-decimal ml-4 mb-2 space-y-1" {...props} />,
+                                                    li: ({node, ...props}) => <li className="ml-1" {...props} />,
+                                                    strong: ({node, ...props}) => <strong className="font-semibold" {...props} />,
+                                                    em: ({node, ...props}) => <em className="italic" {...props} />,
+                                                }}
+                                            >
+                                                {msg.text}
+                                            </ReactMarkdown>
+                                        </div>
 
-                                        {/* Sources */}
-                                        {msg.sources && msg.sources.length > 0 && (
-                                            <div className="pt-3 border-t border-gray-200">
-                                                <p className="text-xs font-medium text-gray-600 mb-2">
-                                                    📄 Sources:
-                                                </p>
-                                                <div className="space-y-1">
-                                                    {msg.sources.slice(0, 3).map((source, i) => (
-                                                        <div key={i} className="text-xs text-gray-600">
-                                                            • {source.filename} {source.page && `(Page ${source.page})`}
-                                                        </div>
-                                                    ))}
+                                        {/* Sources - Deduplicated by filename */}
+                                        {msg.sources && msg.sources.length > 0 && (() => {
+                                            // Deduplicate sources by filename
+                                            const uniqueSources = Array.from(
+                                                new Map(msg.sources.map(s => [s.filename, s])).values()
+                                            );
+                                            return (
+                                                <div className="pt-3 border-t border-gray-200">
+                                                    <p className="text-xs font-medium text-gray-600 mb-2">
+                                                        📄 Sources:
+                                                    </p>
+                                                    <div className="space-y-1">
+                                                        {uniqueSources.map((source, i) => (
+                                                            <div key={i} className="text-xs text-gray-600">
+                                                                • {source.filename}
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        )}
+                                            );
+                                        })()}
                                     </div>
                                 )}
 
