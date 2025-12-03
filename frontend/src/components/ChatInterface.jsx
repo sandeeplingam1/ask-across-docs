@@ -2,11 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Send, Loader2, FileText, AlertCircle } from 'lucide-react';
 import api from '../api';
 
-export default function ChatInterface({ engagement }) {
+export default function ChatInterface({ engagementId }) {
     const [messages, setMessages] = useState([]);
     const [inputValue, setInputValue] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [loadingHistory, setLoadingHistory] = useState(true);
+    const [error, setError] = useState(null);
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
 
@@ -19,13 +20,16 @@ export default function ChatInterface({ engagement }) {
     }, [messages]);
 
     useEffect(() => {
-        loadHistory();
-    }, [engagement.id]);
+        if (engagementId) {
+            loadHistory();
+        }
+    }, [engagementId]);
 
     const loadHistory = async () => {
         try {
             setLoadingHistory(true);
-            const history = await api.getQAHistory(engagement.id);
+            setError(null);
+            const history = await api.getQAHistory(engagementId);
             
             // Convert history to chat messages format
             const chatMessages = history
@@ -49,6 +53,7 @@ export default function ChatInterface({ engagement }) {
             setMessages(chatMessages);
         } catch (error) {
             console.error('Failed to load history:', error);
+            setError('Failed to load chat history. Please refresh the page.');
         } finally {
             setLoadingHistory(false);
         }
@@ -70,7 +75,7 @@ export default function ChatInterface({ engagement }) {
         }]);
 
         try {
-            const answer = await api.askQuestion(engagement.id, question);
+            const answer = await api.askQuestion(engagementId, question);
             
             // Add answer
             setMessages(prev => [...prev, {
@@ -111,6 +116,17 @@ export default function ChatInterface({ engagement }) {
         );
     }
 
+    if (error) {
+        return (
+            <div className="flex items-center justify-center h-96">
+                <div className="text-center">
+                    <AlertCircle className="mx-auto text-red-500 mb-4" size={48} />
+                    <p className="text-red-600">{error}</p>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="flex flex-col h-[calc(100vh-16rem)] bg-white rounded-lg shadow-sm border border-gray-200">
             {/* Messages Area */}
@@ -122,7 +138,7 @@ export default function ChatInterface({ engagement }) {
                             Start a conversation
                         </h3>
                         <p className="text-gray-600">
-                            Ask questions about {engagement.name} documents
+                            Ask questions about your documents
                         </p>
                     </div>
                 ) : (

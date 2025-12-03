@@ -7,7 +7,7 @@ import QuestionTemplateList from '../components/QuestionTemplateList';
 import api from '../api';
 
 export default function EngagementView({ engagement, onBack }) {
-    const [activeTab, setActiveTab] = useState('chat');
+    const [activeTab, setActiveTab] = useState('documents');
     const [refreshDocuments, setRefreshDocuments] = useState(0);
     const [showTemplateSelector, setShowTemplateSelector] = useState(false);
     const [applyingTemplate, setApplyingTemplate] = useState(false);
