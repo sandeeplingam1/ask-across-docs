@@ -60,26 +60,7 @@ export default function EngagementView({ engagement, onBack }) {
                         )}
                     </div>
                 </div>
-                
-                {/* Apply Template Button */}
-                <button
-                    onClick={() => setShowTemplateSelector(!showTemplateSelector)}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                    disabled={applyingTemplate}
-                >
-                    {showTemplateSelector ? 'Hide Templates' : 'Apply Template'}
-                </button>
             </div>
-
-            {/* Template Selector Modal */}
-            {showTemplateSelector && (
-                <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold text-blue-900 mb-3">
-                        Select a template to apply
-                    </h3>
-                    <QuestionTemplateList onSelectTemplate={handleApplyTemplate} />
-                </div>
-            )}
 
             {/* Tabs */}
             <div className="border-b border-gray-200">

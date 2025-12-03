@@ -29,7 +29,7 @@ export default function ChatInterface({ engagementId }) {
         try {
             setLoadingHistory(true);
             setError(null);
-            const history = await api.getQAHistory(engagementId);
+            const history = await api.getQuestionHistory(engagementId);
             
             // Convert history to chat messages format
             const chatMessages = history
