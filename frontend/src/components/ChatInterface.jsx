@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Loader2, FileText, AlertCircle } from 'lucide-react';
+import { Send, Loader2, FileText, AlertCircle, Sparkles } from 'lucide-react';
 import api from '../api';
 
 export default function ChatInterface({ engagementId }) {
@@ -8,6 +8,9 @@ export default function ChatInterface({ engagementId }) {
     const [isLoading, setIsLoading] = useState(false);
     const [loadingHistory, setLoadingHistory] = useState(true);
     const [error, setError] = useState(null);
+    const [showTemplateSelector, setShowTemplateSelector] = useState(false);
+    const [templates, setTemplates] = useState([]);
+    const [loadingTemplates, setLoadingTemplates] = useState(false);
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
 
@@ -98,6 +101,33 @@ export default function ChatInterface({ engagementId }) {
         }
     };
 
+    const loadTemplates = async () => {
+        try {
+            setLoadingTemplates(true);
+            const data = await api.listQuestionTemplates();
+            setTemplates(data);
+        } catch (error) {
+            console.error('Failed to load templates:', error);
+        } finally {
+            setLoadingTemplates(false);
+        }
+    };
+
+    const handleApplyTemplate = async (template) => {
+        if (!confirm(`Apply template "${template.name}" with ${template.question_count} questions?\n\nAnswers will be generated in the background.`)) {
+            return;
+        }
+
+        try {
+            const result = await api.applyTemplateToEngagement(template.id, engagementId);
+            setShowTemplateSelector(false);
+            alert(result.message + '\n\nAnswers are being generated. They will not appear in this chat.');
+        } catch (error) {
+            console.error('Failed to apply template:', error);
+            alert('Failed to apply template. Please try again.');
+        }
+    };
+
     const getConfidenceColor = (confidence) => {
         switch (confidence) {
             case 'high': return 'text-green-600 bg-green-50';
@@ -128,9 +158,9 @@ export default function ChatInterface({ engagementId }) {
     }
 
     return (
-        <div className="flex flex-col h-[calc(100vh-16rem)] bg-white rounded-lg shadow-sm border border-gray-200">
+        <div className="flex flex-col h-[calc(100vh-20rem)] bg-white rounded-lg shadow-sm border border-gray-200">
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex-1 overflow-y-auto p-6 space-y-6" style={{ scrollbarWidth: 'thin' }}>
                 {messages.length === 0 ? (
                     <div className="text-center py-12">
                         <FileText size={48} className="mx-auto text-gray-300 mb-4" />
@@ -213,9 +243,60 @@ export default function ChatInterface({ engagementId }) {
                 <div ref={messagesEndRef} />
             </div>
 
+            {/* Template Selector */}
+            {showTemplateSelector && (
+                <div className="border-t border-gray-200 p-4 bg-blue-50 max-h-64 overflow-y-auto">
+                    <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-semibold text-gray-900">Apply Question Template</h3>
+                        <button
+                            onClick={() => setShowTemplateSelector(false)}
+                            className="text-gray-500 hover:text-gray-700"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                    {loadingTemplates ? (
+                        <div className="flex items-center justify-center py-4">
+                            <Loader2 className="animate-spin text-primary-600" size={24} />
+                        </div>
+                    ) : templates.length === 0 ? (
+                        <p className="text-gray-600 text-sm">No templates available. Create one in the Templates tab.</p>
+                    ) : (
+                        <div className="space-y-2">
+                            {templates.map((template) => (
+                                <button
+                                    key={template.id}
+                                    onClick={() => handleApplyTemplate(template)}
+                                    className="w-full text-left p-3 bg-white rounded-lg border border-gray-200 hover:border-primary-500 hover:bg-primary-50 transition-colors"
+                                >
+                                    <div className="font-medium text-gray-900">{template.name}</div>
+                                    <div className="text-sm text-gray-600">
+                                        {template.question_count} questions
+                                        {template.description && ` • ${template.description}`}
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* Input Area */}
-            <div className="border-t border-gray-200 p-4 bg-gray-50">
+            <div className="border-t border-gray-200 p-4 bg-white">
                 <form onSubmit={handleSubmit} className="flex gap-2">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setShowTemplateSelector(!showTemplateSelector);
+                            if (!showTemplateSelector && templates.length === 0) {
+                                loadTemplates();
+                            }
+                        }}
+                        className="px-4 py-3 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors flex items-center gap-2"
+                        title="Apply a question template"
+                    >
+                        <Sparkles size={20} />
+                    </button>
                     <input
                         ref={inputRef}
                         type="text"
@@ -224,6 +305,12 @@ export default function ChatInterface({ engagementId }) {
                         placeholder="Ask a question about the documents..."
                         className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                         disabled={isLoading}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSubmit(e);
+                            }
+                        }}
                     />
                     <button
                         type="submit"
@@ -237,9 +324,6 @@ export default function ChatInterface({ engagementId }) {
                         )}
                     </button>
                 </form>
-                <p className="text-xs text-gray-500 mt-2 text-center">
-                    Press Enter to send. Answers are generated from uploaded documents.
-                </p>
             </div>
         </div>
     );
