@@ -319,7 +319,7 @@ export default function ChatInterface({ engagementId, onViewDocument }) {
                                                                 </span>
                                                                 <div className="flex-1 min-w-0">
                                                                     <div className="text-xs font-medium text-blue-900">
-                                                                        {source.filename}
+                                                                        {source.filename || source.document_name || `Document ${source.document_id?.substring(0, 8)}` || 'Unknown Document'}
                                                                         {source.page_number && (
                                                                             <span className="text-blue-600 ml-1">
                                                                                 - Page {source.page_number}

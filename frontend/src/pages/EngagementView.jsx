@@ -47,34 +47,34 @@ export default function EngagementView({ engagement, onBack }) {
     };
 
     return (
-        <div className="space-y-6">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
+        <div className="space-y-3">{/* Reduced from space-y-6 to space-y-3 */}
+            {/* Header - Compact */}
+            <div className="flex items-center justify-between py-2">
+                <div className="flex items-center gap-3">
                     <button
                         onClick={onBack}
-                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                        className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
                     >
-                        <ArrowLeft size={24} />
+                        <ArrowLeft size={20} />
                     </button>
                     <div>
-                        <h1 className="text-3xl font-bold text-gray-900">
+                        <h1 className="text-xl font-bold text-gray-900">
                             {engagement.name}
                         </h1>
                         {engagement.client_name && (
-                            <p className="text-gray-600">Client: {engagement.client_name}</p>
+                            <p className="text-xs text-gray-500">Client: {engagement.client_name}</p>
                         )}
                     </div>
                 </div>
             </div>
 
-            {/* Tabs */}
+            {/* Tabs - Compact */}
             <div className="border-b border-gray-200">
-                <nav className="flex gap-8">
+                <nav className="flex gap-6">
                     <button
                         onClick={() => setActiveTab('documents')}
                         className={`
-              pb-3 px-1 border-b-2 font-medium transition-colors
+              pb-2 px-1 border-b-2 font-medium text-sm transition-colors
               ${activeTab === 'documents'
                                 ? 'border-primary-600 text-primary-600'
                                 : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -82,7 +82,7 @@ export default function EngagementView({ engagement, onBack }) {
             `}
                     >
                         <div className="flex items-center gap-2">
-                            <UploadIcon size={20} />
+                            <UploadIcon size={18} />
                             Documents
                         </div>
                     </button>
@@ -90,7 +90,7 @@ export default function EngagementView({ engagement, onBack }) {
                     <button
                         onClick={() => setActiveTab('chat')}
                         className={`
-              pb-3 px-1 border-b-2 font-medium transition-colors
+              pb-2 px-1 border-b-2 font-medium text-sm transition-colors
               ${activeTab === 'chat'
                                 ? 'border-primary-600 text-primary-600'
                                 : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -98,7 +98,7 @@ export default function EngagementView({ engagement, onBack }) {
             `}
                     >
                         <div className="flex items-center gap-2">
-                            <MessageSquare size={20} />
+                            <MessageSquare size={18} />
                             Chat
                         </div>
                     </button>
