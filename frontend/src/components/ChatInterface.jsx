@@ -3,7 +3,7 @@ import { Send, Loader2, FileText, AlertCircle, Sparkles, Trash2 } from 'lucide-r
 import ReactMarkdown from 'react-markdown';
 import api from '../api';
 
-export default function ChatInterface({ engagementId }) {
+export default function ChatInterface({ engagementId, onViewDocument }) {
     const [messages, setMessages] = useState([]);
     const [inputValue, setInputValue] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -287,27 +287,51 @@ export default function ChatInterface({ engagementId }) {
                                             </ReactMarkdown>
                                         </div>
 
-                                        {/* Sources - Deduplicated by filename */}
-                                        {msg.sources && msg.sources.length > 0 && (() => {
-                                            // Deduplicate sources by filename
-                                            const uniqueSources = Array.from(
-                                                new Map(msg.sources.map(s => [s.filename, s])).values()
-                                            );
-                                            return (
-                                                <div className="pt-3 border-t border-gray-200">
-                                                    <p className="text-xs font-medium text-gray-600 mb-2">
-                                                        📄 Sources:
-                                                    </p>
-                                                    <div className="space-y-1">
-                                                        {uniqueSources.map((source, i) => (
-                                                            <div key={i} className="text-xs text-gray-600">
-                                                                • {source.filename}
+                                        {/* Sources - Clickable with page numbers */}
+                                        {msg.sources && msg.sources.length > 0 && (
+                                            <div className="pt-3 border-t border-gray-200">
+                                                <p className="text-xs font-medium text-gray-600 mb-2">
+                                                    📄 Sources:
+                                                </p>
+                                                <div className="space-y-2">
+                                                    {msg.sources.slice(0, 3).map((source, i) => (
+                                                        <button
+                                                            key={i}
+                                                            onClick={() => {
+                                                                if (onViewDocument && source.document_id) {
+                                                                    onViewDocument({
+                                                                        documentId: source.document_id,
+                                                                        filename: source.filename,
+                                                                        pageNumber: source.page_number || 1,
+                                                                        searchText: source.text?.substring(0, 100)
+                                                                    });
+                                                                }
+                                                            }}
+                                                            className="w-full text-left p-2 rounded-lg bg-blue-50 hover:bg-blue-100 transition-colors border border-blue-200"
+                                                        >
+                                                            <div className="flex items-start gap-2">
+                                                                <FileText size={14} className="text-blue-600 mt-0.5 flex-shrink-0" />
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="text-xs font-medium text-blue-900">
+                                                                        {source.filename}
+                                                                        {source.page_number && (
+                                                                            <span className="text-blue-600 ml-1">
+                                                                                (Page {source.page_number})
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    {source.text && (
+                                                                        <div className="text-xs text-gray-600 mt-1 line-clamp-2">
+                                                                            {source.text.substring(0, 100)}...
+                                                                        </div>
+                                                                    )}
+                                                                </div>
                                                             </div>
-                                                        ))}
-                                                    </div>
+                                                        </button>
+                                                    ))}
                                                 </div>
-                                            );
-                                        })()}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 

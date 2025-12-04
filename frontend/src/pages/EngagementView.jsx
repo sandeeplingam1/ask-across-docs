@@ -4,6 +4,7 @@ import DocumentUpload from '../components/DocumentUpload';
 import DocumentList from '../components/DocumentList';
 import ChatInterface from '../components/ChatInterface';
 import QuestionTemplateList from '../components/QuestionTemplateList';
+import DocumentViewer from '../components/DocumentViewer';
 import api from '../api';
 
 export default function EngagementView({ engagement, onBack }) {
@@ -11,6 +12,7 @@ export default function EngagementView({ engagement, onBack }) {
     const [refreshDocuments, setRefreshDocuments] = useState(0);
     const [showTemplateSelector, setShowTemplateSelector] = useState(false);
     const [applyingTemplate, setApplyingTemplate] = useState(false);
+    const [viewingDocument, setViewingDocument] = useState(null);
 
     const handleUploadComplete = () => {
         setRefreshDocuments(prev => prev + 1);
@@ -38,6 +40,10 @@ export default function EngagementView({ engagement, onBack }) {
         } finally {
             setApplyingTemplate(false);
         }
+    };
+
+    const handleViewDocument = (docInfo) => {
+        setViewingDocument(docInfo);
     };
 
     return (
@@ -115,9 +121,23 @@ export default function EngagementView({ engagement, onBack }) {
                 )}
 
                 {activeTab === 'chat' && (
-                    <ChatInterface engagementId={engagement.id} />
+                    <ChatInterface 
+                        engagementId={engagement.id}
+                        onViewDocument={handleViewDocument}
+                    />
                 )}
             </div>
+
+            {/* Document Viewer Modal */}
+            {viewingDocument && (
+                <DocumentViewer
+                    documentId={viewingDocument.documentId}
+                    filename={viewingDocument.filename}
+                    pageNumber={viewingDocument.pageNumber}
+                    searchText={viewingDocument.searchText}
+                    onClose={() => setViewingDocument(null)}
+                />
+            )}
         </div>
     );
 }
