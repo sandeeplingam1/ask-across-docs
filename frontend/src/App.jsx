@@ -61,17 +61,21 @@ function App() {
                 </div>
             </header>
 
-            {/* Main Content */}
-            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            {/* Main Content - Full Width */}
+            <main className="py-4">
                 {currentView === 'templates' ? (
-                    <QuestionTemplates />
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                        <QuestionTemplates />
+                    </div>
                 ) : selectedEngagement ? (
                     <EngagementView
                         engagement={selectedEngagement}
                         onBack={() => setSelectedEngagement(null)}
                     />
                 ) : (
-                    <EngagementList onSelectEngagement={setSelectedEngagement} />
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                        <EngagementList onSelectEngagement={setSelectedEngagement} />
+                    </div>
                 )}
             </main>
         </div>

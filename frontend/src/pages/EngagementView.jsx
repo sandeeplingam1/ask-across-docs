@@ -47,9 +47,9 @@ export default function EngagementView({ engagement, onBack }) {
     };
 
     return (
-        <div className="space-y-3">{/* Reduced from space-y-6 to space-y-3 */}
-            {/* Header - Compact */}
-            <div className="flex items-center justify-between py-2">
+        <div className="h-full flex flex-col">
+            {/* Header - Compact with horizontal padding */}
+            <div className="flex items-center justify-between py-2 px-4 sm:px-6">
                 <div className="flex items-center gap-3">
                     <button
                         onClick={onBack}
@@ -68,8 +68,8 @@ export default function EngagementView({ engagement, onBack }) {
                 </div>
             </div>
 
-            {/* Tabs - Compact */}
-            <div className="border-b border-gray-200">
+            {/* Tabs - Compact with horizontal padding */}
+            <div className="border-b border-gray-200 px-4 sm:px-6">
                 <nav className="flex gap-6">
                     <button
                         onClick={() => setActiveTab('documents')}
@@ -105,10 +105,10 @@ export default function EngagementView({ engagement, onBack }) {
                 </nav>
             </div>
 
-            {/* Content */}
-            <div>
+            {/* Content - Full height, no padding for chat */}
+            <div className="flex-1 overflow-hidden">
                 {activeTab === 'documents' && (
-                    <div className="space-y-6">
+                    <div className="h-full px-4 sm:px-6 py-4 space-y-6 overflow-y-auto">
                         <DocumentUpload
                             engagement={engagement}
                             onUploadComplete={handleUploadComplete}
@@ -121,10 +121,12 @@ export default function EngagementView({ engagement, onBack }) {
                 )}
 
                 {activeTab === 'chat' && (
-                    <ChatInterface 
-                        engagementId={engagement.id}
-                        onViewDocument={handleViewDocument}
-                    />
+                    <div className="h-full">
+                        <ChatInterface 
+                            engagementId={engagement.id}
+                            onViewDocument={handleViewDocument}
+                        />
+                    </div>
                 )}
             </div>
 

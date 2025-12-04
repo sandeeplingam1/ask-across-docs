@@ -222,10 +222,10 @@ export default function ChatInterface({ engagementId, onViewDocument }) {
     }
 
     return (
-        <div className="flex flex-col h-[calc(100vh-20rem)] bg-white rounded-lg shadow-sm border border-gray-200">
+        <div className="flex flex-col h-full bg-white">
             {/* Chat Header with Clear Button */}
             {messages.length > 0 && (
-                <div className="border-b border-gray-200 px-4 py-3 bg-gray-50 flex justify-between items-center">
+                <div className="border-b border-gray-200 px-6 py-3 bg-gray-50 flex justify-between items-center">
                     <span className="text-sm text-gray-600">
                         {messages.filter(m => m.type === 'question').length} questions in history
                     </span>
@@ -240,8 +240,8 @@ export default function ChatInterface({ engagementId, onViewDocument }) {
                 </div>
             )}
             
-            {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6" style={{ scrollbarWidth: 'thin' }}>
+            {/* Messages Area - Full width with side padding */}
+            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6" style={{ scrollbarWidth: 'thin' }}>
                 {messages.length === 0 ? (
                     <div className="text-center py-12">
                         <FileText size={48} className="mx-auto text-gray-300 mb-4" />
@@ -371,7 +371,7 @@ export default function ChatInterface({ engagementId, onViewDocument }) {
 
             {/* Template Selector */}
             {showTemplateSelector && (
-                <div className="border-t border-gray-200 p-4 bg-blue-50 max-h-64 overflow-y-auto">
+                <div className="border-t border-gray-200 px-6 py-4 bg-blue-50 max-h-64 overflow-y-auto">
                     <div className="flex items-center justify-between mb-3">
                         <h3 className="font-semibold text-gray-900">Apply Question Template</h3>
                         <button
@@ -407,8 +407,8 @@ export default function ChatInterface({ engagementId, onViewDocument }) {
                 </div>
             )}
 
-            {/* Input Area */}
-            <div className="border-t border-gray-200 p-4 bg-white">
+            {/* Input Area - Full width with padding */}
+            <div className="border-t border-gray-200 px-6 py-4 bg-white">
                 <form onSubmit={handleSubmit} className="flex gap-2">
                     <button
                         type="button"
