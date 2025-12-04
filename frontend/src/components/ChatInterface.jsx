@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Loader2, FileText, AlertCircle, Sparkles, Trash2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import api from '../api';
 
 export default function ChatInterface({ engagementId, onViewDocument }) {
@@ -271,25 +273,23 @@ export default function ChatInterface({ engagementId, onViewDocument }) {
                                             </div>
                                         )}
 
-                                        {/* Answer Text - Render with inline citation styling */}
-                                        <div 
-                                            className="text-gray-900 leading-relaxed prose prose-sm max-w-none"
-                                            dangerouslySetInnerHTML={{
-                                                __html: msg.text
-                                                    // Convert markdown-like formatting
-                                                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                                                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                                                    // Convert citations to styled superscript
-                                                    .replace(/\[(\d+)\]/g, '<sup class="text-blue-600 font-bold mx-0.5">[$1]</sup>')
-                                                    // Convert line breaks
-                                                    .replace(/\n\n/g, '</p><p class="mb-2">')
-                                                    .replace(/\n/g, '<br>')
-                                                    // Wrap in paragraph
-                                                    .split('</p><p class="mb-2">')
-                                                    .map(p => `<p class="mb-2">${p}</p>`)
-                                                    .join('')
-                                            }}
-                                        />
+                                        {/* Answer Text - Render as Markdown with styled citations */}
+                                        <div className="text-gray-900 leading-relaxed prose prose-sm max-w-none">
+                                            <ReactMarkdown
+                                                remarkPlugins={[remarkGfm]}
+                                                rehypePlugins={[rehypeRaw]}
+                                                components={{
+                                                    p: ({node, ...props}) => <p className="mb-2" {...props} />,
+                                                    ul: ({node, ...props}) => <ul className="list-disc ml-4 mb-2 space-y-1" {...props} />,
+                                                    ol: ({node, ...props}) => <ol className="list-decimal ml-4 mb-2 space-y-1" {...props} />,
+                                                    li: ({node, ...props}) => <li className="ml-1" {...props} />,
+                                                    strong: ({node, ...props}) => <strong className="font-semibold" {...props} />,
+                                                    em: ({node, ...props}) => <em className="italic" {...props} />,
+                                                }}
+                                            >
+                                                {(msg.text || '').replace(/\[(\d+)\]/g, '<sup class="text-blue-600 font-bold mx-0.5">[$1]</sup>')}
+                                            </ReactMarkdown>
+                                        </div>
 
                                         {/* Sources - Numbered Citations (ChatGPT Style) */}
                                         {msg.sources && msg.sources.length > 0 && (
