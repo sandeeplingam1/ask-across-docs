@@ -271,40 +271,25 @@ export default function ChatInterface({ engagementId, onViewDocument }) {
                                             </div>
                                         )}
 
-                                        {/* Answer Text - Render as Markdown with citation styling */}
-                                        <div className="text-gray-900 leading-relaxed prose prose-sm max-w-none">
-                                            <ReactMarkdown
-                                                components={{
-                                                    p: ({node, children, ...props}) => {
-                                                        // Convert text with [1] citations to styled spans
-                                                        const processedChildren = React.Children.map(children, child => {
-                                                            if (typeof child === 'string') {
-                                                                return child.split(/(\[\d+\])/).map((part, idx) => {
-                                                                    const match = part.match(/\[(\d+)\]/);
-                                                                    if (match) {
-                                                                        return (
-                                                                            <sup key={idx} className="text-blue-600 font-bold mx-0.5">
-                                                                                {part}
-                                                                            </sup>
-                                                                        );
-                                                                    }
-                                                                    return part;
-                                                                });
-                                                            }
-                                                            return child;
-                                                        });
-                                                        return <p className="mb-2" {...props}>{processedChildren}</p>;
-                                                    },
-                                                    ul: ({node, ...props}) => <ul className="list-disc ml-4 mb-2 space-y-1" {...props} />,
-                                                    ol: ({node, ...props}) => <ol className="list-decimal ml-4 mb-2 space-y-1" {...props} />,
-                                                    li: ({node, ...props}) => <li className="ml-1" {...props} />,
-                                                    strong: ({node, ...props}) => <strong className="font-semibold" {...props} />,
-                                                    em: ({node, ...props}) => <em className="italic" {...props} />,
-                                                }}
-                                            >
-                                                {msg.text}
-                                            </ReactMarkdown>
-                                        </div>
+                                        {/* Answer Text - Render with inline citation styling */}
+                                        <div 
+                                            className="text-gray-900 leading-relaxed prose prose-sm max-w-none"
+                                            dangerouslySetInnerHTML={{
+                                                __html: msg.text
+                                                    // Convert markdown-like formatting
+                                                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                                                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                                                    // Convert citations to styled superscript
+                                                    .replace(/\[(\d+)\]/g, '<sup class="text-blue-600 font-bold mx-0.5">[$1]</sup>')
+                                                    // Convert line breaks
+                                                    .replace(/\n\n/g, '</p><p class="mb-2">')
+                                                    .replace(/\n/g, '<br>')
+                                                    // Wrap in paragraph
+                                                    .split('</p><p class="mb-2">')
+                                                    .map(p => `<p class="mb-2">${p}</p>`)
+                                                    .join('')
+                                            }}
+                                        />
 
                                         {/* Sources - Numbered Citations (ChatGPT Style) */}
                                         {msg.sources && msg.sources.length > 0 && (
