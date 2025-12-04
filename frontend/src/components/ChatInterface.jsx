@@ -307,7 +307,7 @@ export default function ChatInterface({ engagementId, onViewDocument }) {
                                                                         documentId: source.document_id,
                                                                         filename: source.filename,
                                                                         pageNumber: source.page_number || 1,
-                                                                        searchText: source.text?.substring(0, 100)
+                                                                        searchText: source.text ? String(source.text).substring(0, 100) : ''
                                                                     });
                                                                 }
                                                             }}

@@ -82,16 +82,16 @@ export default function DocumentViewer({ documentId, filename, pageNumber, searc
     
     // Highlight search text in DOCX and text documents
     useEffect(() => {
-        if (!searchText || !contentRef.current) return;
+        if (!searchText || typeof searchText !== 'string' || !contentRef.current) return;
         
         const content = contentRef.current;
         const text = content.textContent || content.innerText;
         
-        if (!text) return;
+        if (!text || typeof text !== 'string') return;
         
         // Find the search text (case-insensitive)
-        const searchLower = searchText.toLowerCase();
-        const textLower = text.toLowerCase();
+        const searchLower = String(searchText).toLowerCase();
+        const textLower = String(text).toLowerCase();
         const index = textLower.indexOf(searchLower);
         
         if (index !== -1) {
