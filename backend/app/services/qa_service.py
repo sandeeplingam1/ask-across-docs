@@ -106,21 +106,21 @@ class QAService:
 
 Your responsibilities:
 1. Answer questions based STRICTLY on the provided document excerpts
-2. Provide accurate, detailed answers citing specific sources
+2. Use inline numbered citations [1], [2], etc. after relevant statements
 3. Use professional audit terminology when appropriate
 4. If sources don't contain enough information to answer fully, clearly state what's missing
 5. Structure answers logically with clear explanations
 
-Important guidelines:
-- Always cite sources using "Source 1", "Source 2", etc.
+Important citation guidelines:
+- Use [1], [2], [3] format for inline citations (not "Source 1")
+- Place citations at the end of relevant sentences or claims
 - Be specific and precise - include numbers, dates, names when available
 - If multiple sources contain relevant information, synthesize them coherently
-- Never make assumptions or add information not in the sources
-- If uncertain, explicitly state your confidence level"""
+- Never make assumptions or add information not in the sources"""
         
         user_prompt = f"""Please answer the following question based on the document excerpts provided below. 
 
-Analyze the excerpts carefully and provide a comprehensive answer.
+Analyze the excerpts carefully and provide a comprehensive answer with numbered citations.
 
 === DOCUMENT EXCERPTS ===
 {context}
@@ -131,9 +131,14 @@ Analyze the excerpts carefully and provide a comprehensive answer.
 === INSTRUCTIONS ===
 Provide a detailed answer that:
 1. Directly addresses the question
-2. Cites specific sources (e.g., "According to Source 2...")
-3. Includes relevant details from the documents
-4. Is clear and professionally structured
+2. Uses inline citations in [1], [2], [3] format
+3. Places citations after each claim or statement from sources
+4. Includes relevant details from the documents
+5. Is clear and professionally structured
+
+Example format:
+"The company implemented new security measures in 2024 [1]. These include badge readers 
+and enhanced monitoring systems [2]. No security breaches were reported [3]."
 
 === ANSWER ===
 """
