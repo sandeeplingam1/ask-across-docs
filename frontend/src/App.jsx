@@ -15,9 +15,9 @@ function App() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            {/* Header */}
-            <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div className="h-screen flex flex-col bg-gradient-to-br from-gray-50 via-blue-50 to-gray-100">
+            {/* Header - Glass Morphism */}
+            <header className="bg-white/80 backdrop-blur-md border-b border-gray-200/50 shadow-sm sticky top-0 z-10">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -61,8 +61,8 @@ function App() {
                 </div>
             </header>
 
-            {/* Main Content - Full Width */}
-            <main className="py-4">
+            {/* Main Content - Full Width, Fixed Height */}
+            <main className="flex-1 overflow-hidden py-4">
                 {currentView === 'templates' ? (
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                         <QuestionTemplates />

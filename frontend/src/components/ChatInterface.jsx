@@ -222,10 +222,10 @@ export default function ChatInterface({ engagementId, onViewDocument }) {
     }
 
     return (
-        <div className="flex flex-col h-full bg-white">
-            {/* Chat Header with Clear Button */}
+        <div className="flex flex-col h-full">
+            {/* Chat Header with Clear Button - Glass Effect */}
             {messages.length > 0 && (
-                <div className="border-b border-gray-200 px-6 py-3 bg-gray-50 flex justify-between items-center">
+                <div className="border-b border-gray-200/50 px-6 py-3 bg-gradient-to-r from-blue-50/50 to-purple-50/50 backdrop-blur-sm flex justify-between items-center flex-shrink-0">
                     <span className="text-sm text-gray-600">
                         {messages.filter(m => m.type === 'question').length} questions in history
                     </span>
@@ -257,13 +257,13 @@ export default function ChatInterface({ engagementId, onViewDocument }) {
                         <div key={idx} className={`flex ${msg.type === 'question' ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-3xl ${msg.type === 'question' ? 'w-auto' : 'w-full'}`}>
                                 {msg.type === 'question' && (
-                                    <div className="bg-primary-600 text-white rounded-2xl rounded-tr-sm px-4 py-3">
+                                    <div className="bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-2xl rounded-tr-sm px-4 py-3 shadow-md">
                                         <p className="whitespace-pre-wrap">{msg.text}</p>
                                     </div>
                                 )}
 
                                 {msg.type === 'answer' && (
-                                    <div className="bg-gray-50 rounded-2xl rounded-tl-sm px-4 py-3 space-y-3">
+                                    <div className="bg-white/80 backdrop-blur-sm border border-gray-200/50 rounded-2xl rounded-tl-sm px-4 py-3 space-y-3 shadow-md">
                                         {/* Confidence Badge */}
                                         {msg.confidence && (
                                             <div className="flex items-center gap-2">
@@ -407,8 +407,8 @@ export default function ChatInterface({ engagementId, onViewDocument }) {
                 </div>
             )}
 
-            {/* Input Area - Full width with padding */}
-            <div className="border-t border-gray-200 px-6 py-4 bg-white">
+            {/* Input Area - Full width with padding - Glass Effect */}
+            <div className="border-t border-gray-200/50 px-6 py-4 bg-gradient-to-r from-white/90 to-blue-50/30 backdrop-blur-md flex-shrink-0">
                 <form onSubmit={handleSubmit} className="flex gap-2">
                     <button
                         type="button"
@@ -429,7 +429,7 @@ export default function ChatInterface({ engagementId, onViewDocument }) {
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
                         placeholder="Ask a question about the documents..."
-                        className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        className="flex-1 px-4 py-3 bg-white/80 backdrop-blur-sm border border-gray-300/50 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
                         disabled={isLoading}
                         onKeyDown={(e) => {
                             if (e.key === 'Enter' && !e.shiftKey) {

@@ -47,9 +47,9 @@ export default function EngagementView({ engagement, onBack }) {
     };
 
     return (
-        <div className="h-full flex flex-col">
-            {/* Header - Compact with horizontal padding */}
-            <div className="flex items-center justify-between py-2 px-4 sm:px-6">
+        <div className="h-full flex flex-col overflow-hidden">
+            {/* Header - Compact with horizontal padding - Glass Effect */}
+            <div className="flex items-center justify-between py-2 px-4 sm:px-6 bg-white/60 backdrop-blur-sm rounded-t-2xl">
                 <div className="flex items-center gap-3">
                     <button
                         onClick={onBack}
@@ -68,16 +68,16 @@ export default function EngagementView({ engagement, onBack }) {
                 </div>
             </div>
 
-            {/* Tabs - Compact with horizontal padding */}
-            <div className="border-b border-gray-200 px-4 sm:px-6">
+            {/* Tabs - Compact with horizontal padding - Glass Effect */}
+            <div className="border-b border-gray-200/50 px-4 sm:px-6 bg-white/40 backdrop-blur-sm">
                 <nav className="flex gap-6">
                     <button
                         onClick={() => setActiveTab('documents')}
                         className={`
-              pb-2 px-1 border-b-2 font-medium text-sm transition-colors
+              pb-2 px-1 border-b-2 font-medium text-sm transition-all
               ${activeTab === 'documents'
-                                ? 'border-primary-600 text-primary-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700'
+                                ? 'border-blue-600 text-blue-700 bg-blue-50/50 rounded-t-lg'
+                                : 'border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/30'
                             }
             `}
                     >
@@ -90,10 +90,10 @@ export default function EngagementView({ engagement, onBack }) {
                     <button
                         onClick={() => setActiveTab('chat')}
                         className={`
-              pb-2 px-1 border-b-2 font-medium text-sm transition-colors
+              pb-2 px-1 border-b-2 font-medium text-sm transition-all
               ${activeTab === 'chat'
-                                ? 'border-primary-600 text-primary-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700'
+                                ? 'border-blue-600 text-blue-700 bg-blue-50/50 rounded-t-lg'
+                                : 'border-transparent text-gray-600 hover:text-gray-800 hover:bg-white/30'
                             }
             `}
                     >
@@ -105,8 +105,8 @@ export default function EngagementView({ engagement, onBack }) {
                 </nav>
             </div>
 
-            {/* Content - Full height, no padding for chat */}
-            <div className="flex-1 overflow-hidden">
+            {/* Content - Full height with glass background */}
+            <div className="flex-1 overflow-hidden bg-white/30 backdrop-blur-sm rounded-b-2xl shadow-lg">
                 {activeTab === 'documents' && (
                     <div className="h-full px-4 sm:px-6 py-4 space-y-6 overflow-y-auto">
                         <DocumentUpload
