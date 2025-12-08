@@ -1,8 +1,9 @@
 """Azure OpenAI embedding service with Azure AD authentication"""
-from openai import AzureOpenAI
+from openai import AzureOpenAI, RateLimitError
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from app.config import settings
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ class EmbeddingService:
     
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """
-        Generate embeddings for multiple texts
+        Generate embeddings for multiple texts with rate limit handling
         
         Args:
             texts: List of texts to embed
@@ -65,12 +66,35 @@ class EmbeddingService:
             # Truncate each text
             batch = [text[:8000] for text in batch]
             
-            response = self.client.embeddings.create(
-                input=batch,
-                model=self.deployment
-            )
+            # Retry logic for rate limiting
+            max_retries = 5
+            retry_delay = 2
             
-            embeddings = [item.embedding for item in response.data]
-            all_embeddings.extend(embeddings)
+            for attempt in range(max_retries):
+                try:
+                    response = self.client.embeddings.create(
+                        input=batch,
+                        model=self.deployment
+                    )
+                    
+                    embeddings = [item.embedding for item in response.data]
+                    all_embeddings.extend(embeddings)
+                    break  # Success
+                    
+                except RateLimitError as e:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Rate limit hit for batch {i//batch_size + 1}, retrying in {retry_delay}s (attempt {attempt + 1}/{max_retries})")
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        logger.error(f"Rate limit exceeded after {max_retries} attempts for batch {i//batch_size + 1}")
+                        raise
+                except Exception as e:
+                    logger.error(f"Error generating embeddings for batch {i//batch_size + 1}: {str(e)}")
+                    raise
+            
+            # Small delay between batches to avoid rate limits
+            if i + batch_size < len(texts):
+                await asyncio.sleep(0.5)
         
         return all_embeddings
