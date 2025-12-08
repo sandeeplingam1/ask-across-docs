@@ -5,6 +5,7 @@ import { FileText, Trash2, CheckCircle, XCircle, Clock } from 'lucide-react';
 export default function DocumentList({ engagement, refreshTrigger }) {
     const [documents, setDocuments] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
     const [selectedDocs, setSelectedDocs] = useState(new Set());
     const [deleting, setDeleting] = useState(false);
     const [processing, setProcessing] = useState(false);
@@ -21,22 +22,29 @@ export default function DocumentList({ engagement, refreshTrigger }) {
 
         if (hasProcessingDocs) {
             const intervalId = setInterval(() => {
-                loadDocuments();
-            }, 3000); // Check every 3 seconds
+                loadDocuments(true); // Pass true to indicate auto-refresh
+            }, 5000); // Check every 5 seconds (less aggressive)
 
             return () => clearInterval(intervalId);
         }
     }, [documents, engagement.id]);
 
-    const loadDocuments = async () => {
+    const loadDocuments = async (isAutoRefresh = false) => {
         try {
+            if (isAutoRefresh) {
+                setRefreshing(true);
+            }
             const response = await documentApi.list(engagement.id);
             setDocuments(response.data);
-            setSelectedDocs(new Set()); // Clear selection when reloading
+            // Only clear selection on initial load, not during auto-refresh
+            if (!isAutoRefresh) {
+                setSelectedDocs(new Set());
+            }
         } catch (error) {
             console.error('Failed to load documents:', error);
         } finally {
             setLoading(false);
+            setRefreshing(false);
         }
     };
 
@@ -143,6 +151,8 @@ export default function DocumentList({ engagement, refreshTrigger }) {
         return <div className="text-gray-500">Loading documents...</div>;
     }
 
+    const processingCount = documents.filter(d => d.status === 'processing' || d.status === 'queued').length;
+
     if (documents.length === 0) {
         return (
             <div className="card text-center py-8">
@@ -155,9 +165,21 @@ export default function DocumentList({ engagement, refreshTrigger }) {
     return (
         <div className="card">
             <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold">
-                    Documents ({documents.length})
-                </h3>
+                <div className="flex items-center gap-3">
+                    <h3 className="text-lg font-semibold">
+                        Documents ({documents.length})
+                    </h3>
+                    {refreshing && (
+                        <span className="text-xs text-gray-500 animate-pulse">
+                            Refreshing...
+                        </span>
+                    )}
+                    {processingCount > 0 && !refreshing && (
+                        <span className="text-xs text-yellow-600">
+                            {processingCount} processing
+                        </span>
+                    )}
+                </div>
                 
                 <div className="flex gap-2">
                     {selectedDocs.size > 0 && (
