@@ -125,6 +125,49 @@ async def get_engagement(
     )
 
 
+@router.put("/{engagement_id}", response_model=EngagementResponse)
+async def update_engagement(
+    engagement_id: str,
+    engagement_data: EngagementCreate,
+    session: AsyncSession = Depends(get_session)
+):
+    """Update an existing engagement"""
+    engagement = await session.get(Engagement, engagement_id)
+    
+    if not engagement:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+    
+    # Update fields
+    engagement.name = engagement_data.name
+    engagement.description = engagement_data.description
+    engagement.client_name = engagement_data.client_name
+    engagement.start_date = engagement_data.start_date
+    engagement.end_date = engagement_data.end_date
+    engagement.updated_at = datetime.utcnow()
+    
+    await session.commit()
+    await session.refresh(engagement)
+    
+    # Count documents
+    doc_count_query = select(func.count(Document.id)).where(
+        Document.engagement_id == engagement_id
+    )
+    result = await session.execute(doc_count_query)
+    document_count = result.scalar()
+    
+    return EngagementResponse(
+        id=engagement.id,
+        name=engagement.name,
+        description=engagement.description,
+        client_name=engagement.client_name,
+        start_date=engagement.start_date,
+        end_date=engagement.end_date,
+        document_count=document_count,
+        created_at=engagement.created_at,
+        updated_at=engagement.updated_at
+    )
+
+
 @router.delete("/{engagement_id}", status_code=204)
 async def delete_engagement(
     engagement_id: str,

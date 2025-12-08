@@ -15,6 +15,7 @@ export const engagementApi = {
     list: () => api.get('/engagements'),
     create: (data) => api.post('/engagements', data),
     get: (id) => api.get(`/engagements/${id}`),
+    update: (id, data) => api.put(`/engagements/${id}`, data),
     delete: (id) => api.delete(`/engagements/${id}`),
 };
 
