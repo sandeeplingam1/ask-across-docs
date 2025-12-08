@@ -112,8 +112,9 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint for Container Apps"""
-    from app.db_session import get_session
-    from sqlalchemy import text
+    from app.db_session import get_session, AsyncSessionLocal
+    from sqlalchemy import text, select, func
+    from app.database import Document
     
     health_status = {
         "status": "healthy",
@@ -123,12 +124,25 @@ async def health_check():
         "services": {}
     }
     
-    # Check database connectivity
+    # Check database connectivity and get processing stats
     try:
-        async for session in get_session():
-            # Simple connection check - just opening session validates the connection
+        async with AsyncSessionLocal() as session:
+            # Get document processing stats
+            stats_query = select(
+                Document.status,
+                func.count(Document.id).label('count')
+            ).group_by(Document.status)
+            
+            result = await session.execute(stats_query)
+            stats = {row.status: row.count for row in result}
+            
             health_status["services"]["database"] = "healthy"
-            break
+            health_status["document_processing"] = {
+                "queued": stats.get("queued", 0),
+                "processing": stats.get("processing", 0),
+                "completed": stats.get("completed", 0),
+                "failed": stats.get("failed", 0)
+            }
     except Exception as e:
         health_status["status"] = "degraded"
         health_status["services"]["database"] = f"unhealthy: {str(e)}"
