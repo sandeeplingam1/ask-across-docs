@@ -206,6 +206,56 @@ async def process_queued_documents(
     
     if not queued_docs:
         return {"message": "No documents to process", "count": 0}
+
+
+@router.post("/reset-stuck", status_code=200)
+async def reset_stuck_documents(
+    engagement_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    """Reset documents stuck in processing status back to queued"""
+    from datetime import datetime, timedelta
+    
+    # Find documents stuck in processing for more than 5 minutes
+    five_minutes_ago = datetime.utcnow() - timedelta(minutes=5)
+    
+    query = select(Document).where(
+        Document.engagement_id == engagement_id,
+        Document.status == "processing",
+        Document.updated_at < five_minutes_ago
+    )
+    
+    result = await session.execute(query)
+    stuck_docs = result.scalars().all()
+    
+    if not stuck_docs:
+        return {
+            "message": "No stuck documents found",
+            "reset_count": 0
+        }
+    
+    # Reset them to queued
+    for doc in stuck_docs:
+        doc.status = "queued"
+        doc.progress = 0
+        doc.error_message = "Reset from stuck processing state"
+        logger.info(f"Reset stuck document {doc.id} ({doc.filename}) to queued")
+    
+    await session.commit()
+    
+    return {
+        "message": f"Reset {len(stuck_docs)} stuck documents",
+        "reset_count": len(stuck_docs),
+        "documents": [{"id": doc.id, "filename": doc.filename} for doc in stuck_docs]
+    }
+
+
+@router.post("/process-queued-old", status_code=202)
+async def process_queued_documents_old(
+    engagement_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    """OLD DEPRECATED: Process all queued documents for an engagement"""
     
     processed = 0
     failed = 0

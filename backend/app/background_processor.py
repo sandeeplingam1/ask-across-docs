@@ -1,6 +1,7 @@
 """Background processor for queued documents - processes automatically in batches"""
 import asyncio
 import logging
+from datetime import datetime, timedelta
 from sqlalchemy import select
 from app.database import Document
 from app.db_session import AsyncSessionLocal
@@ -29,23 +30,30 @@ async def process_queued_documents_batch():
             from datetime import datetime, timedelta
             ten_minutes_ago = datetime.utcnow() - timedelta(minutes=10)
             
+            # Query for stuck documents using processing_started_at OR documents with NULL timestamps
             stuck_query = select(Document).where(
-                Document.status == "processing",
-                Document.updated_at < ten_minutes_ago
+                Document.status == "processing"
+            ).where(
+                # Either: started > 10 minutes ago, OR never had a start time (stuck from old code)
+                (Document.processing_started_at < ten_minutes_ago) | 
+                (Document.processing_started_at.is_(None))
             )
             
             result = await session.execute(stuck_query)
             stuck_docs = result.scalars().all()
             
             if stuck_docs:
-                logger.warning(f"Found {len(stuck_docs)} stuck documents, resetting to queued")
+                logger.warning(f"🔄 Found {len(stuck_docs)} stuck documents, resetting to queued")
                 for doc in stuck_docs:
                     doc.status = "queued"
                     doc.progress = 0
                     doc.error_message = "Processing timeout - will retry"
+                    doc.processing_started_at = None
+                    doc.processing_completed_at = None
                 await session.commit()
+                logger.info(f"✅ Reset {len(stuck_docs)} stuck documents to queued")
     except Exception as e:
-        logger.error(f"Error resetting stuck documents: {str(e)}")
+        logger.error(f"❌ Error resetting stuck documents: {str(e)}", exc_info=True)
     
     while True:
         try:
@@ -70,6 +78,7 @@ async def process_queued_documents_batch():
                         logger.info(f"Starting to process document {document.id} ({document.filename})")
                         document.status = "processing"
                         document.progress = 10
+                        document.processing_started_at = datetime.utcnow()  # SET START TIME
                         await session.commit()
                         
                         # Download file from blob storage with timeout
@@ -158,6 +167,7 @@ async def process_queued_documents_batch():
                         document.chunk_count = len(chunks)
                         document.progress = 100
                         document.error_message = None
+                        document.processing_completed_at = datetime.utcnow()  # SET COMPLETION TIME
                         await session.commit()
                         
                         logger.info(f"✅ Successfully processed document {document.id} ({document.filename}) - {len(chunks)} chunks")
