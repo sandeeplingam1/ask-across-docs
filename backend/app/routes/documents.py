@@ -151,22 +151,40 @@ async def delete_document(
     document_id: str,
     session: AsyncSession = Depends(get_session)
 ):
-    """Delete a document"""
+    """Delete a document completely - from vector store, storage, and database"""
     document = await session.get(Document, document_id)
     
     if not document or document.engagement_id != engagement_id:
         raise HTTPException(status_code=404, detail="Document not found")
     
-    # Delete from vector store
-    await vector_store.delete_document(engagement_id, document_id)
-    
-    # Delete file from disk
-    if document.file_path and os.path.exists(document.file_path):
-        os.remove(document.file_path)
-    
-    # Delete from database
-    await session.delete(document)
-    await session.commit()
+    try:
+        # 1. Delete from vector store (AI Search) - removes embeddings
+        logger.info(f"Deleting document {document_id} from vector store")
+        await vector_store.delete_document(engagement_id, document_id)
+        
+        # 2. Delete file from storage (Azure Blob or local)
+        if document.file_path:
+            try:
+                file_storage = get_file_storage()
+                await file_storage.delete_file(document.file_path)
+                logger.info(f"Deleted file from storage: {document.file_path}")
+            except Exception as e:
+                logger.warning(f"Could not delete file from storage: {str(e)}")
+                # Continue anyway - database cleanup is most important
+        
+        # 3. Delete from database
+        await session.delete(document)
+        await session.commit()
+        
+        logger.info(f"Successfully deleted document {document_id}")
+        
+    except Exception as e:
+        logger.error(f"Error deleting document {document_id}: {str(e)}", exc_info=True)
+        await session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete document: {str(e)}"
+        )
     
     return None
 

@@ -45,11 +45,17 @@ app = FastAPI(
     redoc_url="/redoc" if settings.is_development else "/redoc"
 )
 
-# CORS configuration - Allow all origins for document uploads
+# CORS configuration - Explicitly allow frontend and development origins
+allowed_origins = [
+    "https://blue-island-0b509160f.3.azurestaticapps.net",
+    "http://localhost:5173",
+    "http://localhost:3000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins
-    allow_credentials=False,  # Must be False when allow_origins is "*"
+    allow_origins=allowed_origins,
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
     expose_headers=["*"],
