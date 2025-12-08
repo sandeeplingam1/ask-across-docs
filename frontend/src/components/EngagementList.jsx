@@ -20,25 +20,6 @@ export default function EngagementList({ onSelectEngagement }) {
 
     useEffect(() => {
         loadEngagements();
-        
-        // Keyboard shortcuts
-        const handleKeyboard = (e) => {
-            if (e.ctrlKey && e.key === 'n') {
-                e.preventDefault();
-                setShowCreateForm(true);
-            }
-            if (e.ctrlKey && e.key === 'k') {
-                e.preventDefault();
-                document.getElementById('engagement-search')?.focus();
-            }
-            if (e.key === 'Escape') {
-                setShowCreateForm(false);
-                setShowEditForm(false);
-            }
-        };
-        
-        window.addEventListener('keydown', handleKeyboard);
-        return () => window.removeEventListener('keydown', handleKeyboard);
     }, []);
 
     // Filter and sort engagements
@@ -179,7 +160,6 @@ export default function EngagementList({ onSelectEngagement }) {
                         setShowEditForm(false);
                     }}
                     className="btn-primary flex items-center gap-2"
-                    title="Create new engagement (Ctrl+N)"
                 >
                     <FolderPlus size={20} />
                     New Engagement
@@ -197,7 +177,7 @@ export default function EngagementList({ onSelectEngagement }) {
                             type="text"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Search engagements... (Ctrl+K)"
+                            placeholder="Search engagements..."
                             className="input pl-10 pr-10"
                         />
                         {searchQuery && (
@@ -468,14 +448,6 @@ export default function EngagementList({ onSelectEngagement }) {
                 </div>
             )}
 
-            {/* Keyboard Shortcuts Hint */}
-            <div className="text-xs text-gray-500 text-center mt-4">
-                <span className="inline-flex items-center gap-4">
-                    <span><kbd className="px-2 py-1 bg-gray-100 rounded border border-gray-300">Ctrl+N</kbd> New</span>
-                    <span><kbd className="px-2 py-1 bg-gray-100 rounded border border-gray-300">Ctrl+K</kbd> Search</span>
-                    <span><kbd className="px-2 py-1 bg-gray-100 rounded border border-gray-300">Esc</kbd> Close</span>
-                </span>
-            </div>
         </div>
     );
 }
