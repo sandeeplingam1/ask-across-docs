@@ -70,6 +70,7 @@ async def process_queued_documents_batch():
     
     while True:
         try:
+            logger.debug("Background processor: Checking for queued documents...")
             async with AsyncSessionLocal() as session:
                 # Get up to 5 queued documents at a time
                 # Standard S0 tier has 30 connections - can handle batch processing
@@ -79,6 +80,8 @@ async def process_queued_documents_batch():
                 
                 result = await session.execute(query)
                 queued_docs = result.scalars().all()
+                
+                logger.debug(f"Background processor: Found {len(queued_docs)} queued documents")
                 
                 if not queued_docs:
                     # No documents to process, wait and check again
@@ -204,6 +207,15 @@ async def process_queued_documents_batch():
 
 _background_task = None
 
+def _task_done_callback(task):
+    """Callback when background task completes (it shouldn't!)"""
+    try:
+        task.result()  # This will raise if task failed
+        logger.warning("⚠️ Background processor task completed unexpectedly!")
+    except Exception as e:
+        logger.error(f"❌ Background processor task failed: {str(e)}", exc_info=True)
+        print(f"❌ BACKGROUND PROCESSOR CRASHED: {e}")
+
 def start_background_processor():
     """Start the background processor task"""
     global _background_task
@@ -211,6 +223,7 @@ def start_background_processor():
         loop = asyncio.get_running_loop()
         print(f"📝 Event loop found: {loop}")
         _background_task = loop.create_task(process_queued_documents_batch())
+        _background_task.add_done_callback(_task_done_callback)
         print(f"✅ Background task created: {_background_task}")
         logger.info("✅ Background document processor task created")
     except Exception as e:
