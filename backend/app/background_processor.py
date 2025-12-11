@@ -24,14 +24,11 @@ vector_store = get_vector_store()
 
 async def process_queued_documents_batch():
     """Process queued documents in batches automatically"""
-    print("🚀🚀🚀 BACKGROUND PROCESSOR FUNCTION STARTED 🚀🚀🚀")
-    logger.info("🚀 Background processor loop starting...")
+    logger.info("Background processor starting")
     
     # First, reset any stuck documents (processing for more than 10 minutes)
     try:
-        print("📝 Attempting to get database session for stuck document check...")
         async with AsyncSessionLocal() as session:
-            print("✅ Database session acquired")
             from datetime import datetime, timedelta
             ten_minutes_ago = datetime.utcnow() - timedelta(minutes=10)
             
@@ -44,37 +41,28 @@ async def process_queued_documents_batch():
                 (Document.processing_started_at.is_(None))
             )
             
-            print("📝 Executing stuck document query...")
             result = await session.execute(stuck_query)
             stuck_docs = result.scalars().all()
-            print(f"📝 Query completed, found {len(stuck_docs) if stuck_docs else 0} stuck documents")
             
             if stuck_docs:
-                logger.warning(f"🔄 Found {len(stuck_docs)} stuck documents, resetting to queued")
-                print(f"🔄 Resetting {len(stuck_docs)} stuck documents...")
+                logger.info(f"Resetting {len(stuck_docs)} stuck documents to queued")
                 for doc in stuck_docs:
                     doc.status = "queued"
                     doc.progress = 0
                     doc.error_message = "Processing timeout - will retry"
                     doc.processing_started_at = None
                     doc.processing_completed_at = None
-                print("📝 Committing reset...")
                 await session.commit()
-                logger.info(f"✅ Reset {len(stuck_docs)} stuck documents to queued")
-                print(f"✅ Reset {len(stuck_docs)} stuck documents to queued")
+                logger.info(f"Reset {len(stuck_docs)} stuck documents successfully")
     except Exception as e:
         # Catch ALL exceptions to prevent function from crashing
-        logger.error(f"❌ Error in stuck document check: {str(e)}", exc_info=True)
-        print(f"❌ ERROR in stuck document reset: {type(e).__name__}: {str(e)}")
+        logger.error(f"Error in stuck document check: {str(e)}", exc_info=True)
         # Continue to main loop even if stuck document check fails
     
-    print("📝 Background processor: Entering main loop")
-    logger.info("📝 Background processor: Entering main loop")
+    logger.info("Background processor entering main loop")
     
     while True:
-        print("📝 Background processor: Loop iteration starting...")
         try:
-            logger.debug("Background processor: Checking for queued documents...")
             async with AsyncSessionLocal() as session:
                 # Get up to 5 queued documents at a time
                 # Standard S0 tier has 30 connections - can handle batch processing
@@ -84,8 +72,6 @@ async def process_queued_documents_batch():
                 
                 result = await session.execute(query)
                 queued_docs = result.scalars().all()
-                
-                logger.debug(f"Background processor: Found {len(queued_docs)} queued documents")
                 
                 if not queued_docs:
                     # No documents to process, wait and check again
@@ -215,21 +201,17 @@ def _task_done_callback(task):
     """Callback when background task completes (it shouldn't!)"""
     try:
         task.result()  # This will raise if task failed
-        logger.warning("⚠️ Background processor task completed unexpectedly!")
+        logger.warning("Background processor task completed unexpectedly")
     except Exception as e:
-        logger.error(f"❌ Background processor task failed: {str(e)}", exc_info=True)
-        print(f"❌ BACKGROUND PROCESSOR CRASHED: {e}")
+        logger.error(f"Background processor task failed: {str(e)}", exc_info=True)
 
 def start_background_processor():
     """Start the background processor task"""
     global _background_task
     try:
         loop = asyncio.get_running_loop()
-        print(f"📝 Event loop found: {loop}")
         _background_task = loop.create_task(process_queued_documents_batch())
         _background_task.add_done_callback(_task_done_callback)
-        print(f"✅ Background task created: {_background_task}")
-        logger.info("✅ Background document processor task created")
+        logger.info("Background document processor task created")
     except Exception as e:
-        print(f"❌ ERROR creating background task: {e}")
-        logger.error(f"❌ Failed to start background processor: {str(e)}", exc_info=True)
+        logger.error(f"Failed to start background processor: {str(e)}", exc_info=True)
