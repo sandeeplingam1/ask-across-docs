@@ -16,25 +16,30 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
     # Startup
-    print("🚀 Starting Audit App API v1.1.0")
-    print(f"📍 Environment: {settings.environment}")
-    await init_db()  # Now async
-    print("✅ Database initialized")
-    print(f"✅ Vector store: {settings.vector_db_type}")
-    print(f"✅ CORS origins: {', '.join(settings.cors_origins_list[:3])}...")
-    if settings.enable_telemetry:
-        print("✅ Application Insights enabled")
+    try:
+        logger.info("Starting Audit App API v1.1.0")
+        logger.info(f"Environment: {settings.environment}")
+        await init_db()  # Now async
+        logger.info("Database initialized")
+        logger.info(f"Vector store: {settings.vector_db_type}")
+        logger.info(f"CORS origins: {', '.join(settings.cors_origins_list[:3])}...")
+        if settings.enable_telemetry:
+            logger.info("Application Insights enabled")
+        
+        # Start background processor for queued documents
+        logger.info("Starting background processor...")
+        from app.background_processor import start_background_processor
+        start_background_processor()
+        logger.info("Background processor started")
+        
+        logger.info("API ready to accept requests")
+    except Exception as e:
+        logger.error(f"Startup failed: {str(e)}", exc_info=True)
+        raise  # Re-raise to prevent app from starting in broken state
     
-    # Start background processor for queued documents
-    print("🔄 Starting background processor...")
-    from app.background_processor import start_background_processor
-    start_background_processor()
-    print("✅ Background processor started")
-    
-    print("✅ API ready to accept requests")
     yield
     # Shutdown
-    print("👋 Shutting down Audit App API...")
+    logger.info("Shutting down Audit App API...")
 
 
 app = FastAPI(
