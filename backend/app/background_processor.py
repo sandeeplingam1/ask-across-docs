@@ -188,7 +188,16 @@ async def process_queued_documents_batch():
             await asyncio.sleep(10)
 
 
+_background_task = None
+
 def start_background_processor():
     """Start the background processor task"""
-    asyncio.create_task(process_queued_documents_batch())
-    logger.info("Background document processor started")
+    global _background_task
+    try:
+        loop = asyncio.get_running_loop()
+        _background_task = loop.create_task(process_queued_documents_batch())
+        logger.info("✅ Background document processor started")
+    except RuntimeError:
+        # No event loop running yet, will be started by lifespan
+        logger.warning("⚠️  No event loop running, background processor will start with lifespan")
+        pass
