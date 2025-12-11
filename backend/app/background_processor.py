@@ -60,13 +60,13 @@ async def process_queued_documents_batch():
                 await session.commit()
                 logger.info(f"✅ Reset {len(stuck_docs)} stuck documents to queued")
     except asyncio.TimeoutError:
-        logger.error("❌ Database connection timeout - Basic tier SQL may be at connection limit")
+        logger.error("❌ Database connection timeout during stuck document check")
         print("❌ CONNECTION TIMEOUT - SQL database connection limit reached!")
-        await asyncio.sleep(30)  # Wait longer before retry
+        # Don't return - continue to main loop
     except Exception as e:
         logger.error(f"❌ Error resetting stuck documents: {str(e)}", exc_info=True)
         print(f"❌ ERROR in stuck document reset: {type(e).__name__}: {str(e)}")
-        await asyncio.sleep(10)
+        # Don't return - continue to main loop
     
     print("📝 Background processor: Entering main loop")
     logger.info("📝 Background processor: Entering main loop")
