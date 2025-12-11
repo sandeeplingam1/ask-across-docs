@@ -51,12 +51,14 @@ async def process_queued_documents_batch():
             
             if stuck_docs:
                 logger.warning(f"🔄 Found {len(stuck_docs)} stuck documents, resetting to queued")
+                print(f"🔄 Resetting {len(stuck_docs)} stuck documents...")
                 for doc in stuck_docs:
                     doc.status = "queued"
                     doc.progress = 0
                     doc.error_message = "Processing timeout - will retry"
                     doc.processing_started_at = None
                     doc.processing_completed_at = None
+                print("📝 Committing reset...")
                 await session.commit()
                 logger.info(f"✅ Reset {len(stuck_docs)} stuck documents to queued")
                 print(f"✅ Reset {len(stuck_docs)} stuck documents to queued")
