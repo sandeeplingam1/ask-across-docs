@@ -24,6 +24,8 @@ vector_store = get_vector_store()
 
 async def process_queued_documents_batch():
     """Process queued documents in batches automatically"""
+    logger.info("🚀 Background processor loop starting...")
+    
     # First, reset any stuck documents (processing for more than 10 minutes)
     try:
         async with AsyncSessionLocal() as session:
@@ -196,8 +198,6 @@ def start_background_processor():
     try:
         loop = asyncio.get_running_loop()
         _background_task = loop.create_task(process_queued_documents_batch())
-        logger.info("✅ Background document processor started")
-    except RuntimeError:
-        # No event loop running yet, will be started by lifespan
-        logger.warning("⚠️  No event loop running, background processor will start with lifespan")
-        pass
+        logger.info("✅ Background document processor task created")
+    except Exception as e:
+        logger.error(f"❌ Failed to start background processor: {str(e)}", exc_info=True)
