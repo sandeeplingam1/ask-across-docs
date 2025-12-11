@@ -29,7 +29,9 @@ async def process_queued_documents_batch():
     
     # First, reset any stuck documents (processing for more than 10 minutes)
     try:
+        print("📝 Attempting to get database session for stuck document check...")
         async with AsyncSessionLocal() as session:
+            print("✅ Database session acquired")
             from datetime import datetime, timedelta
             ten_minutes_ago = datetime.utcnow() - timedelta(minutes=10)
             
@@ -42,8 +44,10 @@ async def process_queued_documents_batch():
                 (Document.processing_started_at.is_(None))
             )
             
+            print("📝 Executing stuck document query...")
             result = await session.execute(stuck_query)
             stuck_docs = result.scalars().all()
+            print(f"📝 Query completed, found {len(stuck_docs) if stuck_docs else 0} stuck documents")
             
             if stuck_docs:
                 logger.warning(f"🔄 Found {len(stuck_docs)} stuck documents, resetting to queued")
@@ -55,8 +59,14 @@ async def process_queued_documents_batch():
                     doc.processing_completed_at = None
                 await session.commit()
                 logger.info(f"✅ Reset {len(stuck_docs)} stuck documents to queued")
+    except asyncio.TimeoutError:
+        logger.error("❌ Database connection timeout - Basic tier SQL may be at connection limit")
+        print("❌ CONNECTION TIMEOUT - SQL database connection limit reached!")
+        await asyncio.sleep(30)  # Wait longer before retry
     except Exception as e:
         logger.error(f"❌ Error resetting stuck documents: {str(e)}", exc_info=True)
+        print(f"❌ ERROR in stuck document reset: {type(e).__name__}: {str(e)}")
+        await asyncio.sleep(10)
     
     while True:
         try:

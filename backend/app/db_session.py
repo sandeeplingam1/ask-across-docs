@@ -6,11 +6,16 @@ import os
 
 # Create async engine with aioodbc for SQL Server
 # aioodbc supports async operations with ODBC drivers
+# CRITICAL: Basic tier SQL has only 5 concurrent connections max
+# With 2 workers + background processor, we need strict pool limits
 engine = create_async_engine(
     settings.database_url,
     echo=False,
     pool_pre_ping=True,  # Verify connections before using
     pool_recycle=3600,   # Recycle connections after 1 hour
+    pool_size=3,         # Max 3 connections in pool (leave 2 for spikes)
+    max_overflow=2,      # Allow 2 extra connections in emergencies
+    pool_timeout=30,     # Wait max 30s for connection before failing
     future=True
 )
 
