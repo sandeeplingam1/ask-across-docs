@@ -68,7 +68,11 @@ async def process_queued_documents_batch():
         print(f"❌ ERROR in stuck document reset: {type(e).__name__}: {str(e)}")
         await asyncio.sleep(10)
     
+    print("📝 Background processor: Entering main loop")
+    logger.info("📝 Background processor: Entering main loop")
+    
     while True:
+        print("📝 Background processor: Loop iteration starting...")
         try:
             logger.debug("Background processor: Checking for queued documents...")
             async with AsyncSessionLocal() as session:
