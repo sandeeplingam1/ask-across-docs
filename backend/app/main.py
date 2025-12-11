@@ -17,28 +17,40 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
     # Startup
     try:
+        print("[STARTUP] Starting Audit App API v1.1.0", flush=True)
         logger.info("Starting Audit App API v1.1.0")
+        print(f"[STARTUP] Environment: {settings.environment}", flush=True)
         logger.info(f"Environment: {settings.environment}")
+        print("[STARTUP] Initializing database...", flush=True)
         await init_db()  # Now async
+        print("[STARTUP] Database initialized", flush=True)
         logger.info("Database initialized")
+        print(f"[STARTUP] Vector store: {settings.vector_db_type}", flush=True)
         logger.info(f"Vector store: {settings.vector_db_type}")
+        print(f"[STARTUP] CORS origins: {', '.join(settings.cors_origins_list[:3])}...", flush=True)
         logger.info(f"CORS origins: {', '.join(settings.cors_origins_list[:3])}...")
         if settings.enable_telemetry:
+            print("[STARTUP] Application Insights enabled", flush=True)
             logger.info("Application Insights enabled")
         
         # Start background processor for queued documents
+        print("[STARTUP] Starting background processor...", flush=True)
         logger.info("Starting background processor...")
         from app.background_processor import start_background_processor
         start_background_processor()
+        print("[STARTUP] Background processor started", flush=True)
         logger.info("Background processor started")
         
+        print("[STARTUP] API ready to accept requests", flush=True)
         logger.info("API ready to accept requests")
     except Exception as e:
+        print(f"[STARTUP ERROR] {str(e)}", flush=True)
         logger.error(f"Startup failed: {str(e)}", exc_info=True)
         raise  # Re-raise to prevent app from starting in broken state
     
     yield
     # Shutdown
+    print("[SHUTDOWN] Shutting down Audit App API...", flush=True)
     logger.info("Shutting down Audit App API...")
 
 
