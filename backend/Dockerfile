@@ -46,5 +46,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # Expose port
 EXPOSE 8000
 
-# Run with uvicorn - 2 workers for better performance with Standard S0 tier
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# Run with uvicorn - 1 worker to avoid duplicate background processors
+# TODO: Implement proper single-instance background processor for multi-worker setup
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
