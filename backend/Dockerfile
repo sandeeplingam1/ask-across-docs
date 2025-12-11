@@ -46,6 +46,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # Expose port
 EXPOSE 8000
 
-# Run with uvicorn - REDUCED to 2 workers due to Basic tier SQL (5 connection limit)
-# With 2 workers + background processor = ~4-5 connections used
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# Run with uvicorn - REDUCED to 1 worker due to Basic tier SQL (5 connection limit)
+# Basic tier only supports 5 concurrent connections which is insufficient
+# Upgrade to Standard S0 tier (DTU 10, 30 connections) for production use
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
