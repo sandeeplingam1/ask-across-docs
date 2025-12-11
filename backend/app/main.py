@@ -26,8 +26,10 @@ async def lifespan(app: FastAPI):
         print("✅ Application Insights enabled")
     
     # Start background processor for queued documents
+    print("🔄 Starting background processor...")
     from app.background_processor import start_background_processor
     start_background_processor()
+    print("✅ Background processor started")
     
     print("✅ API ready to accept requests")
     yield
