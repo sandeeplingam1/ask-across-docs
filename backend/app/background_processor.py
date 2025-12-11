@@ -71,11 +71,11 @@ async def process_queued_documents_batch():
     while True:
         try:
             async with AsyncSessionLocal() as session:
-                # Get ONLY 1 queued document at a time (reduced from 10)
-                # Basic tier SQL has only 5 connections total - process one at a time
+                # Get up to 5 queued documents at a time
+                # Standard S0 tier has 30 connections - can handle batch processing
                 query = select(Document).where(
                     Document.status == "queued"
-                ).limit(1)
+                ).limit(5)
                 
                 result = await session.execute(query)
                 queued_docs = result.scalars().all()
