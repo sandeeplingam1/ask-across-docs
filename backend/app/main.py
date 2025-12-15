@@ -34,15 +34,12 @@ async def lifespan(app: FastAPI):
             logger.info("Application Insights enabled")
         
         # Start background processor for queued documents
-        # TEMPORARILY DISABLED - causing container crashes
-        # print("[STARTUP] Starting background processor...", flush=True)
-        # logger.info("Starting background processor...")
-        # from app.background_processor import start_background_processor
-        # start_background_processor()
-        # print("[STARTUP] Background processor started", flush=True)
-        # logger.info("Background processor started")
-        print("[STARTUP] Background processor DISABLED for stability", flush=True)
-        logger.warning("Background processor DISABLED - manual processing only")
+        print("[STARTUP] Starting background processor...", flush=True)
+        logger.info("Starting background processor...")
+        from app.background_processor import start_background_processor
+        start_background_processor()
+        print("[STARTUP] Background processor started", flush=True)
+        logger.info("Background processor started")
         
         print("[STARTUP] API ready to accept requests", flush=True)
         logger.info("API ready to accept requests")
