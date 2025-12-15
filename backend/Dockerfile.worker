@@ -1,4 +1,4 @@
-"""Dockerfile for the standalone document processing worker"""
+# Dockerfile for the standalone document processing worker
 FROM python:3.12-slim
 
 WORKDIR /app

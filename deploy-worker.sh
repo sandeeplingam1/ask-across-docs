@@ -28,13 +28,7 @@ cd ..
 
 echo "✅ Worker image built and pushed"
 
-# Get all secrets from existing backend container
-echo "🔑 Retrieving configuration from backend..."
-DATABASE_URL=$(az containerapp show --name auditapp-staging-backend --resource-group $RESOURCE_GROUP --query 'properties.template.containers[0].env[?name==`DATABASE_URL`].secretRef' -o tsv)
-STORAGE_CONN=$(az containerapp show --name auditapp-staging-backend --resource-group $RESOURCE_GROUP --query 'properties.template.containers[0].env[?name==`AZURE_STORAGE_CONNECTION_STRING`].secretRef' -o tsv)
-SEARCH_KEY=$(az containerapp show --name auditapp-staging-backend --resource-group $RESOURCE_GROUP --query 'properties.template.containers[0].env[?name==`AZURE_SEARCH_API_KEY`].secretRef' -o tsv)
-
-# Get all the env var values
+# Get all the env var values from backend (non-secrets)
 AZURE_OPENAI_ENDPOINT=$(az containerapp show --name auditapp-staging-backend --resource-group $RESOURCE_GROUP --query 'properties.template.containers[0].env[?name==`AZURE_OPENAI_ENDPOINT`].value' -o tsv)
 AZURE_OPENAI_CHAT_DEPLOYMENT=$(az containerapp show --name auditapp-staging-backend --resource-group $RESOURCE_GROUP --query 'properties.template.containers[0].env[?name==`AZURE_OPENAI_CHAT_DEPLOYMENT`].value' -o tsv)
 AZURE_OPENAI_EMBEDDING_DEPLOYMENT=$(az containerapp show --name auditapp-staging-backend --resource-group $RESOURCE_GROUP --query 'properties.template.containers[0].env[?name==`AZURE_OPENAI_EMBEDDING_DEPLOYMENT`].value' -o tsv)
@@ -56,6 +50,7 @@ if az containerapp show --name $WORKER_APP_NAME --resource-group $RESOURCE_GROUP
         --max-replicas 1
 else
     echo "🆕 Creating new worker container..."
+    echo "⚠️  Manual secret configuration required after creation"
     az containerapp create \
         --name $WORKER_APP_NAME \
         --resource-group $RESOURCE_GROUP \
@@ -67,8 +62,6 @@ else
         --memory 1.0Gi \
         --min-replicas 1 \
         --max-replicas 1 \
-        --ingress external \
-        --target-port 8000 \
         --env-vars \
             "ENVIRONMENT=staging" \
             "VECTOR_DB_TYPE=azure_search" \
@@ -80,15 +73,21 @@ else
             "AZURE_OPENAI_API_VERSION=$AZURE_OPENAI_API_VERSION" \
             "AZURE_SEARCH_ENDPOINT=$AZURE_SEARCH_ENDPOINT" \
             "AZURE_SEARCH_INDEX_NAME=$AZURE_SEARCH_INDEX_NAME" \
-            "AZURE_STORAGE_CONTAINER_NAME=$AZURE_STORAGE_CONTAINER_NAME" \
-        --secrets \
-            "database-url=$DATABASE_URL" \
-            "storage-connection-string=$STORAGE_CONN" \
-            "azure-search-api-key=$SEARCH_KEY" \
-        --secret-env-vars \
-            "DATABASE_URL=database-url" \
-            "AZURE_STORAGE_CONNECTION_STRING=storage-connection-string" \
-            "AZURE_SEARCH_API_KEY=azure-search-api-key"
+            "AZURE_STORAGE_CONTAINER_NAME=$AZURE_STORAGE_CONTAINER_NAME"
+    
+    echo ""
+    echo "📝 Now adding secrets from Azure Portal or CLI..."
+    echo "   You need to add these secrets to the worker container:"
+    echo "   - DATABASE_URL"
+    echo "   - AZURE_STORAGE_CONNECTION_STRING"  
+    echo "   - AZURE_SEARCH_API_KEY"
+    echo ""
+    echo "   Copy them from auditapp-staging-backend container in Azure Portal:"
+    echo "   1. Go to Container Apps > auditapp-staging-backend > Secrets"
+    echo "   2. Copy each secret"
+    echo "   3. Go to Container Apps > auditapp-staging-worker > Secrets"
+    echo "   4. Add each secret with same name"
+    echo "   5. Add environment variables referencing the secrets"
 fi
 
 echo "✅ Worker deployment complete!"
