@@ -33,13 +33,10 @@ async def lifespan(app: FastAPI):
             print("[STARTUP] Application Insights enabled", flush=True)
             logger.info("Application Insights enabled")
         
-        # Start background processor for queued documents
-        print("[STARTUP] Starting background processor...", flush=True)
-        logger.info("Starting background processor...")
-        from app.background_processor import start_background_processor
-        start_background_processor()
-        print("[STARTUP] Background processor started", flush=True)
-        logger.info("Background processor started")
+        # Background processing is handled by separate worker process
+        # See backend/worker.py for document processing
+        print("[STARTUP] Background processing: Separate worker process", flush=True)
+        logger.info("Background processing handled by separate worker process")
         
         print("[STARTUP] API ready to accept requests", flush=True)
         logger.info("API ready to accept requests")
