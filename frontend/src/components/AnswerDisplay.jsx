@@ -31,6 +31,20 @@ export default function AnswerDisplay({ answer }) {
     };
 
     const handleViewDocument = (source, sourceIndex) => {
+        // Validate source has required fields
+        if (!source || !source.document_id) {
+            console.error('Invalid source object:', source);
+            alert('Cannot open document: Missing document information');
+            return;
+        }
+        
+        console.log('Opening document:', {
+            documentId: source.document_id,
+            documentName: source.document_name,
+            pageNumber: source.page_number,
+            chunkText: source.chunk_text?.substring(0, 50) + '...'
+        });
+        
         setViewingDocument(source);
         setSelectedSourceIndex(sourceIndex);
     };
@@ -181,17 +195,16 @@ export default function AnswerDisplay({ answer }) {
             </div>
 
             {/* Document Viewer Modal */}
-            {viewingDocument && (
+            {viewingDocument && viewingDocument.document_id && (
                 <DocumentViewer
                     documentId={viewingDocument.document_id}
-                    filename={viewingDocument.document_nam} // Full chunk text for highlighting
-                    highlightChunk={viewingDocument.chunk_text} // Pass full chunk for better highlighting
+                    filename={viewingDocument.document_name || 'Document'}
+                    pageNumber={viewingDocument.page_number}
+                    searchText={viewingDocument.chunk_text || ''}
                     onClose={() => {
                         setViewingDocument(null);
                         setSelectedSourceIndex(null);
                     }}
-                    searchText={viewingDocument.chunk_text.substring(0, 50)} // First 50 chars for highlighting
-                    onClose={() => setViewingDocument(null)}
                 />
             )}
         </>
