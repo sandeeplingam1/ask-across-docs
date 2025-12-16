@@ -214,7 +214,7 @@ class DocumentWorker:
                 # Get queued documents
                 query = select(Document).where(
                     Document.status == "queued"
-                ).order_by(Document.created_at).limit(self.batch_size)
+                ).order_by(Document.updated_at).limit(self.batch_size)
                 
                 result = await session.execute(query)
                 queued_docs = result.scalars().all()
