@@ -335,7 +335,7 @@ async def process_queued_documents_old(
     }
 
 
-@router.post("/{engagement_id}/reset-stuck", tags=["admin"])
+@router.post("/reset-stuck", tags=["admin"])
 async def reset_stuck_documents(
     engagement_id: str,
     hours_stuck: int = 1,
