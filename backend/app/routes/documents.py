@@ -402,3 +402,66 @@ async def reset_stuck_documents(
         "failed_count": failed_count,
         "documents_reset": [doc.filename for doc in stuck_docs[:reset_count]]
     }
+
+
+@router.post("/requeue-all", tags=["admin"])
+async def requeue_all_queued_documents(
+    engagement_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    """Force requeue ALL queued/processing documents regardless of time (emergency fix)"""
+    logger.info(f"Force requeuing ALL documents for engagement {engagement_id}")
+    
+    # Verify engagement exists
+    engagement = await session.get(Engagement, engagement_id)
+    if not engagement:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+    
+    # Get Service Bus
+    service_bus = get_service_bus()
+    if not service_bus:
+        raise HTTPException(status_code=503, detail="Service Bus not configured")
+    
+    # Get ALL queued/processing documents (no time filter)
+    result = await session.execute(
+        select(Document).where(
+            Document.engagement_id == engagement_id,
+            Document.status.in_(['processing', 'queued'])
+        )
+    )
+    docs = result.scalars().all()
+    
+    if not docs:
+        return {"message": "No queued/processing documents found", "queued_count": 0}
+    
+    logger.info(f"Found {len(docs)} documents to requeue")
+    
+    queued_count = 0
+    failed_count = 0
+    
+    # Resend all to Service Bus
+    for doc in docs:
+        try:
+            # Reset to queued and clear errors
+            doc.status = 'queued'
+            doc.updated_at = datetime.utcnow()
+            doc.error_message = None
+            
+            # Send to Service Bus
+            await service_bus.send_document_message(str(doc.engagement_id), str(doc.id))
+            
+            queued_count += 1
+            logger.info(f"✅ Requeued: {doc.filename}")
+            
+        except Exception as e:
+            failed_count += 1
+            logger.error(f"❌ Failed to requeue {doc.filename}: {e}")
+    
+    await session.commit()
+    
+    return {
+        "message": f"Requeued {queued_count} documents to Service Bus",
+        "queued_count": queued_count,
+        "failed_count": failed_count,
+        "document_filenames": [doc.filename for doc in docs[:queued_count]]
+    }
