@@ -315,33 +315,73 @@ class AzureAISearchStore(VectorStore):
         return search_results
     
     async def delete_document(self, engagement_id: str, document_id: str):
-        """Delete all chunks for a document"""
-        search_client = self._get_search_client()
+        """Delete all chunks for a document with logging and error handling"""
+        import logging
+        logger = logging.getLogger(__name__)
         
-        # Find all chunks for this document
-        results = search_client.search(
-            search_text="*",
-            filter=f"document_id eq '{document_id}' and engagement_id eq '{engagement_id}'",
-            select=["id"]
-        )
-        
-        ids_to_delete = [{"id": r["id"]} for r in results]
-        if ids_to_delete:
-            search_client.delete_documents(ids_to_delete)
+        try:
+            search_client = self._get_search_client()
+            
+            # Find all chunks for this document
+            results = list(search_client.search(
+                search_text="*",
+                filter=f"document_id eq '{document_id}' and engagement_id eq '{engagement_id}'",
+                select=["id"],
+                top=1000
+            ))
+            
+            ids_to_delete = [{"id": r["id"]} for r in results]
+            if ids_to_delete:
+                search_client.delete_documents(ids_to_delete)
+                logger.info(f"AI Search: Deleted {len(ids_to_delete)} chunks for document {document_id}")
+            else:
+                logger.warning(f"AI Search: No chunks found for document {document_id}")
+                
+        except Exception as e:
+            logger.error(f"AI Search: Failed to delete document {document_id}: {str(e)}")
+            raise
     
     async def delete_collection(self, engagement_id: str):
-        """Delete all documents for an engagement"""
-        search_client = self._get_search_client()
+        """Delete all documents for an engagement with pagination support"""
+        import logging
+        logger = logging.getLogger(__name__)
         
-        results = search_client.search(
-            search_text="*",
-            filter=f"engagement_id eq '{engagement_id}'",
-            select=["id"]
-        )
-        
-        ids_to_delete = [{"id": r["id"]} for r in results]
-        if ids_to_delete:
-            search_client.delete_documents(ids_to_delete)
+        try:
+            search_client = self._get_search_client()
+            deleted_total = 0
+            batch_count = 0
+            
+            # Keep deleting until no more results found (handles pagination)
+            while True:
+                results = list(search_client.search(
+                    search_text="*",
+                    filter=f"engagement_id eq '{engagement_id}'",
+                    select=["id"],
+                    top=1000  # Process in batches of 1000
+                ))
+                
+                if not results:
+                    break
+                
+                ids_to_delete = [{"id": r["id"]} for r in results]
+                search_client.delete_documents(ids_to_delete)
+                
+                batch_count += 1
+                deleted_total += len(ids_to_delete)
+                logger.info(f"AI Search: Deleted batch {batch_count} ({len(ids_to_delete)} chunks) for engagement {engagement_id}")
+                
+                # If we got less than 1000, we're done
+                if len(results) < 1000:
+                    break
+            
+            if deleted_total > 0:
+                logger.info(f"AI Search: Successfully deleted {deleted_total} total chunks for engagement {engagement_id}")
+            else:
+                logger.warning(f"AI Search: No chunks found for engagement {engagement_id}")
+                
+        except Exception as e:
+            logger.error(f"AI Search: Failed to delete chunks for engagement {engagement_id}: {str(e)}")
+            raise  # Re-raise so caller knows it failed
 
 
 # Factory function to get the correct vector store
