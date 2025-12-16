@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     enable_background_processing: bool = True
     max_concurrent_document_processing: int = 10
     
+    # Azure Service Bus (for event-driven processing)
+    service_bus_enabled: bool = False  # Enable to use Service Bus instead of polling
+    service_bus_connection_string: str | None = None  # For local development
+    service_bus_namespace: str | None = None  # For Azure deployment with managed identity (e.g., "mybus.servicebus.windows.net")
+    service_bus_queue_name: str = "document-processing"
+    
     # Database
     database_url: str = "sqlite+aiosqlite:///./data/audit_app.db"
     database_pool_size: int = 5

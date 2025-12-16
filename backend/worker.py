@@ -55,7 +55,14 @@ class DocumentWorker:
         self.vector_store = get_vector_store()
         self.file_storage = get_file_storage()
         
-        logger.info(f"Worker initialized - batch_size={self.batch_size}, poll_interval={self.poll_interval}s")
+        # Initialize Service Bus (if enabled)
+        from app.services.service_bus import get_service_bus
+        self.service_bus = get_service_bus()
+        
+        if self.service_bus:
+            logger.info(f"Worker initialized with SERVICE BUS (instant processing) - batch_size={self.batch_size}")
+        else:
+            logger.info(f"Worker initialized with POLLING (fallback) - batch_size={self.batch_size}, poll_interval={self.poll_interval}s")
     
     def handle_shutdown(self, signum, frame):
         """Handle graceful shutdown"""
@@ -247,8 +254,53 @@ class DocumentWorker:
             logger.error(f"Error in batch processing: {e}", exc_info=True)
             return 0
     
+    async def process_from_service_bus(self):
+        """Process documents from Service Bus queue (event-driven)"""
+        try:
+            messages = self.service_bus.receive_messages(max_wait_time=30)
+            
+            if not messages:
+                return 0
+            
+            processed = 0
+            async with AsyncSessionLocal() as session:
+                for msg_data in messages:
+                    try:
+                        document_id = msg_data["document_id"]
+                        
+                        # Get document from database
+                        result = await session.execute(
+                            select(Document).where(Document.id == document_id)
+                        )
+                        document = result.scalar_one_or_none()
+                        
+                        if document and document.status == "queued":
+                            await self.process_document(document, session)
+                            processed += 1
+                            
+                            # Complete message (remove from queue)
+                            if "message" in msg_data:
+                                self.service_bus.complete_message(msg_data["message"])
+                        else:
+                            # Document already processed or not found - complete message
+                            if "message" in msg_data:
+                                self.service_bus.complete_message(msg_data["message"])
+                            logger.warning(f"Document {document_id} not found or already processed")
+                            
+                    except Exception as e:
+                        logger.error(f"Error processing message: {e}", exc_info=True)
+                        # Abandon message for retry
+                        if "message" in msg_data:
+                            self.service_bus.abandon_message(msg_data["message"])
+            
+            return processed
+            
+        except Exception as e:
+            logger.error(f"Error receiving Service Bus messages: {e}", exc_info=True)
+            return 0
+    
     async def run(self):
-        """Main worker loop"""
+        """Main worker loop with Service Bus support"""
         logger.info("🚀 Document Worker Starting...")
         
         # Initialize database
@@ -262,12 +314,20 @@ class DocumentWorker:
         # Reset stuck documents on startup
         await self.reset_stuck_documents()
         
-        logger.info("📋 Worker ready - waiting for documents...")
+        if self.service_bus:
+            logger.info("📋 Worker ready - listening for Service Bus messages (instant processing)...")
+        else:
+            logger.info("📋 Worker ready - polling database (fallback mode)...")
+        
         idle_count = 0
         
         while self.running:
             try:
-                processed = await self.process_batch()
+                # Use Service Bus if available, otherwise fall back to polling
+                if self.service_bus:
+                    processed = await self.process_from_service_bus()
+                else:
+                    processed = await self.process_batch()
                 
                 if processed > 0:
                     idle_count = 0
@@ -275,10 +335,11 @@ class DocumentWorker:
                 else:
                     idle_count += 1
                     if idle_count % 6 == 1:  # Log every minute
-                        logger.debug("No documents in queue, waiting...")
+                        logger.debug("No documents/messages in queue, waiting...")
                 
-                # Wait before next poll
-                await asyncio.sleep(self.poll_interval)
+                # Shorter wait with Service Bus (it has its own timeout)
+                wait_time = 5 if self.service_bus else self.poll_interval
+                await asyncio.sleep(wait_time)
                 
             except Exception as e:
                 logger.error(f"Unexpected error in worker loop: {e}", exc_info=True)

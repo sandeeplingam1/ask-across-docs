@@ -102,6 +102,16 @@ async def upload_documents(
             
             logger.info(f"Document {document.id} queued for processing")
             
+            # Send Service Bus message for immediate processing (if enabled)
+            try:
+                from app.services.service_bus import get_service_bus
+                service_bus = get_service_bus()
+                if service_bus:
+                    await service_bus.send_document_message(engagement_id, str(document.id))
+                    logger.info(f"Sent Service Bus message for document {document.id}")
+            except Exception as e:
+                logger.warning(f"Failed to send Service Bus message (will use polling fallback): {str(e)}")
+            
             results.append(UploadStatus(
                 filename=file.filename,
                 status="queued",
