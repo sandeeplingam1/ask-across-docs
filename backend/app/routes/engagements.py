@@ -184,14 +184,16 @@ async def delete_engagement(
     result = await session.execute(doc_query)
     documents = result.scalars().all()
     
-    # Delete physical files from disk/blob storage
+    # Delete physical files from blob storage
+    from app.services.file_storage import get_file_storage
+    file_storage = get_file_storage()
     deleted_files = 0
     for doc in documents:
-        if doc.file_path and os.path.exists(doc.file_path):
+        if doc.file_path:
             try:
-                os.remove(doc.file_path)
+                await file_storage.delete_file(doc.file_path)
                 deleted_files += 1
-                logger.info(f"Deleted file: {doc.file_path}")
+                logger.info(f"Deleted file from storage: {doc.file_path}")
             except Exception as e:
                 logger.error(f"Failed to delete file {doc.file_path}: {str(e)}")
     

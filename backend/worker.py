@@ -42,7 +42,7 @@ class DocumentWorker:
     
     def __init__(self):
         self.running = True
-        self.batch_size = 1  # Process one at a time for stability
+        self.batch_size = 1  # Process 1 document at a time (sequential processing for stability)
         self.poll_interval = 10  # Check every 10 seconds
         self.stuck_document_threshold = 600  # 10 minutes
         
@@ -227,9 +227,16 @@ class DocumentWorker:
                 # Process each document
                 processed = 0
                 for document in queued_docs:
-                    success = await self.process_document(document, session)
-                    if success:
-                        processed += 1
+                    try:
+                        success = await self.process_document(document, session)
+                        if success:
+                            processed += 1
+                    except Exception as e:
+                        logger.error(f"Failed to process document {document.id}: {e}", exc_info=True)
+                    finally:
+                        # Force garbage collection after each document to free memory
+                        import gc
+                        gc.collect()
                     
                     # Small delay between documents
                     await asyncio.sleep(2)

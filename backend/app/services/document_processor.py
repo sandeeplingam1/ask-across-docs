@@ -129,15 +129,28 @@ class DocumentProcessor:
                             'end_char': current_char + len(page_text)
                         })
                         current_char += len(page_text) + 2  # +2 for "\n\n"
+                    
+                    # Force garbage collection every 10 pages to prevent memory buildup
+                    if (page_num + 1) % 10 == 0:
+                        import gc
+                        gc.collect()
+                        
                 except Exception as e:
                     print(f"Warning: Could not extract text from page {page_num + 1}: {e}")
                     continue
             
             full_text = "\n\n".join(text_parts)
-            return {
+            result = {
                 'text': full_text,
                 'pages': pages_metadata
             }
+            
+            # Final cleanup
+            del pdf_reader, text_parts, pages_metadata
+            import gc
+            gc.collect()
+            
+            return result
         except Exception as e:
             raise ValueError(f"Failed to extract PDF: {str(e)}")
     
@@ -298,12 +311,20 @@ class DocumentProcessor:
             raise ValueError(f"Failed to extract Excel: {str(e)}")
     
     def _extract_image(self, file_content: BinaryIO) -> dict:
-        """Extract text from images using OCR"""
+        """Extract text from images using OCR with memory optimization"""
         if not IMAGE_SUPPORT:
             raise ValueError("Image/OCR support not available. Install Pillow and pytesseract.")
         
+        image = None
         try:
             image = Image.open(file_content)
+            
+            # Resize large images to prevent OOM (max 4000px on longest side)
+            max_dimension = 4000
+            if max(image.size) > max_dimension:
+                ratio = max_dimension / max(image.size)
+                new_size = tuple(int(dim * ratio) for dim in image.size)
+                image = image.resize(new_size, Image.Resampling.LANCZOS)
             
             # Perform OCR
             text = pytesseract.image_to_string(image)
@@ -311,9 +332,18 @@ class DocumentProcessor:
             if not text.strip():
                 text = "[No text detected in image]"
             
-            return {
+            result = {
                 'text': text,
                 'pages': [{'page_num': 1, 'text': text, 'start_char': 0, 'end_char': len(text)}]
             }
+            
+            return result
         except Exception as e:
             raise ValueError(f"Failed to extract text from image: {str(e)}")
+        finally:
+            # Explicitly close and delete image to free memory
+            if image is not None:
+                image.close()
+                del image
+            import gc
+            gc.collect()
