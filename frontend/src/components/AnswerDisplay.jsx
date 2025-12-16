@@ -4,6 +4,7 @@ import DocumentViewer from './DocumentViewer';
 
 export default function AnswerDisplay({ answer }) {
     const [viewingDocument, setViewingDocument] = useState(null);
+    const [selectedSourceIndex, setSelectedSourceIndex] = useState(null);
 
     // Handle both single answer and batch answers
     const answers = answer.answers || [answer];
@@ -29,8 +30,81 @@ export default function AnswerDisplay({ answer }) {
         );
     };
 
-    const handleViewDocument = (source) => {
+    const handleViewDocument = (source, sourceIndex) => {
         setViewingDocument(source);
+        setSelectedSourceIndex(sourceIndex);
+    };
+
+    // Parse answer text and make citations clickable
+    const renderAnswerWithCitations = (answerText, sources) => {
+        if (!sources || sources.length === 0) {
+            return answerText;
+        }
+
+        // Split text by citation pattern [1], [2], etc.
+        const citationRegex = /\[(\d+)\]/g;
+        const parts = [];
+        let lastIndex = 0;
+        let match;
+
+        while ((match = citationRegex.exec(answerText)) !== null) {
+            // Add text before citation
+            if (match.index > lastIndex) {
+                parts.push({
+                    type: 'text',
+                    content: answerText.substring(lastIndex, match.index)
+                });
+            }
+
+            // Add citation as clickable link
+            const citationNumber = parseInt(match[1]);
+            const sourceIndex = citationNumber - 1;
+            
+            if (sourceIndex >= 0 && sourceIndex < sources.length) {
+                parts.push({
+                    type: 'citation',
+                    number: citationNumber,
+                    sourceIndex: sourceIndex,
+                    source: sources[sourceIndex]
+                });
+            } else {
+                // Invalid citation, render as text
+                parts.push({
+                    type: 'text',
+                    content: match[0]
+                });
+            }
+
+            lastIndex = match.index + match[0].length;
+        }
+
+        // Add remaining text
+        if (lastIndex < answerText.length) {
+            parts.push({
+                type: 'text',
+                content: answerText.substring(lastIndex)
+            });
+        }
+
+        return parts.map((part, idx) => {
+            if (part.type === 'text') {
+                return <span key={idx}>{part.content}</span>;
+            } else {
+                return (
+                    <button
+                        key={idx}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewDocument(part.source, part.sourceIndex);
+                        }}
+                        className="inline-flex items-center justify-center w-6 h-6 text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-full mx-0.5 cursor-pointer transition-all hover:scale-110 shadow-sm"
+                        title={`View source: ${part.source.document_name || 'Document'}`}
+                    >
+                        {part.number}
+                    </button>
+                );
+            }
+        });
     };
 
     return (
@@ -49,9 +123,9 @@ export default function AnswerDisplay({ answer }) {
                         </div>
 
                         <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                            <p className="text-gray-900 whitespace-pre-wrap leading-relaxed">
-                                {ans.answer}
-                            </p>
+                            <div className="text-gray-900 whitespace-pre-wrap leading-relaxed">
+                                {renderAnswerWithCitations(ans.answer, ans.sources)}
+                            </div>
                         </div>
 
                         {ans.sources && ans.sources.length > 0 && (
@@ -64,8 +138,10 @@ export default function AnswerDisplay({ answer }) {
                                     {ans.sources.map((source, idx) => (
                                         <div
                                             key={idx}
-                                            className="bg-white border border-gray-200 rounded-lg p-3 hover:border-primary-400 hover:shadow-md transition-all cursor-pointer"
-                                            onClick={() => handleViewDocument(source)}
+                                            className={`bg-white border rounded-lg p-3 hover:border-primary-400 hover:shadow-md transition-all cursor-pointer ${
+                                                selectedSourceIndex === idx ? 'border-primary-500 ring-2 ring-primary-200' : 'border-gray-200'
+                                            }`}
+                                            onClick={() => handleViewDocument(source, idx)}
                                         >
                                             <div className="flex items-center justify-between mb-2">
                                                 <div className="flex items-center gap-2">
@@ -108,8 +184,12 @@ export default function AnswerDisplay({ answer }) {
             {viewingDocument && (
                 <DocumentViewer
                     documentId={viewingDocument.document_id}
-                    filename={viewingDocument.document_name || 'Document'}
-                    pageNumber={viewingDocument.page_number}
+                    filename={viewingDocument.document_nam} // Full chunk text for highlighting
+                    highlightChunk={viewingDocument.chunk_text} // Pass full chunk for better highlighting
+                    onClose={() => {
+                        setViewingDocument(null);
+                        setSelectedSourceIndex(null);
+                    }}
                     searchText={viewingDocument.chunk_text.substring(0, 50)} // First 50 chars for highlighting
                     onClose={() => setViewingDocument(null)}
                 />

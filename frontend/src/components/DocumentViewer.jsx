@@ -80,7 +80,7 @@ export default function DocumentViewer({ documentId, filename, pageNumber, searc
         }
     }, [documentUrl, isTextBased, isDocx, isOfficeDoc]);
     
-    // Highlight search text in DOCX and text documents
+    // Highlight search text in DOCX and text documents - enhanced to find partial matches
     useEffect(() => {
         if (!searchText || typeof searchText !== 'string' || !contentRef.current) return;
         
@@ -89,13 +89,32 @@ export default function DocumentViewer({ documentId, filename, pageNumber, searc
         
         if (!text || typeof text !== 'string') return;
         
-        // Find the search text (case-insensitive)
-        const searchLower = String(searchText).toLowerCase();
-        const textLower = String(text).toLowerCase();
-        const index = textLower.indexOf(searchLower);
+        // Try to find the search text with flexible matching
+        const searchCleaned = String(searchText)
+            .replace(/\s+/g, ' ') // Normalize whitespace
+            .trim()
+            .toLowerCase();
         
-        if (index !== -1) {
-            // Use CSS to highlight matching text
+        const textCleaned = String(text)
+            .replace(/\s+/g, ' ')
+            .toLowerCase();
+        
+        // Try to find exact match first, then try first 100 chars, then first 50 chars
+        let searchPhrase = searchCleaned;
+        let phraseIndex = textCleaned.indexOf(searchPhrase);
+        
+        if (phraseIndex === -1 && searchCleaned.length > 100) {
+            searchPhrase = searchCleaned.substring(0, 100);
+            phraseIndex = textCleaned.indexOf(searchPhrase);
+        }
+        
+        if (phraseIndex === -1 && searchCleaned.length > 50) {
+            searchPhrase = searchCleaned.substring(0, 50);
+            phraseIndex = textCleaned.indexOf(searchPhrase);
+        }
+        
+        if (phraseIndex !== -1) {
+            // Use CSS to highlight matching text with better styling
             const walker = document.createTreeWalker(
                 content,
                 NodeFilter.SHOW_TEXT,
@@ -109,28 +128,38 @@ export default function DocumentViewer({ documentId, filename, pageNumber, searc
                 textNodes.push(node);
             }
             
+            let foundMatch = false;
+            
             textNodes.forEach(textNode => {
+                if (foundMatch) return; // Only highlight first match
+                
                 const nodeText = textNode.textContent;
-                const nodeLower = nodeText.toLowerCase();
-                const nodeIndex = nodeLower.indexOf(searchLower);
+                const nodeCleaned = nodeText.replace(/\s+/g, ' ').toLowerCase();
+                const nodeIndex = nodeCleaned.indexOf(searchPhrase);
                 
                 if (nodeIndex !== -1) {
                     const before = nodeText.substring(0, nodeIndex);
-                    const match = nodeText.substring(nodeIndex, nodeIndex + searchText.length);
-                    const after = nodeText.substring(nodeIndex + searchText.length);
+                    const matchLength = searchPhrase.length;
+                    const match = nodeText.substring(nodeIndex, nodeIndex + matchLength);
+                    const after = nodeText.substring(nodeIndex + matchLength);
                     
                     const span = document.createElement('span');
-                    span.innerHTML = `${before}<mark style="background-color: yellow; padding: 2px 4px; border-radius: 2px;">${match}</mark>${after}`;
+                    span.innerHTML = `${before}<mark style="background-color: #ffd700; padding: 4px 8px; border-radius: 4px; font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.1); animation: pulse 2s ease-in-out 3;">${match}</mark>${after}`;
                     
                     textNode.parentNode.replaceChild(span, textNode);
+                    foundMatch = true;
                 }
             });
             
-            // Scroll to first highlight
-            const firstMark = content.querySelector('mark');
-            if (firstMark) {
-                firstMark.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
+            // Scroll to first highlight with delay for rendering
+            setTimeout(() => {
+                const firstMark = content.querySelector('mark');
+                if (firstMark) {
+                    firstMark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // Add pulsing animation
+                    firstMark.style.animation = 'pulse 1s ease-in-out 3';
+                }
+            }, 100);
         }
     }, [searchText, docxHtml, textContent]);
 

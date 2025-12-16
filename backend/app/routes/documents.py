@@ -11,7 +11,9 @@ from app.services.embedding_service import EmbeddingService
 from app.services.vector_store import get_vector_store
 from app.services.file_storage import get_file_storage
 from app.services.background_tasks import BackgroundDocumentProcessor
+from app.services.service_bus import get_service_bus
 from app.config import settings
+from datetime import datetime, timedelta
 import os
 import aiofiles
 from pathlib import Path
@@ -330,4 +332,73 @@ async def process_queued_documents_old(
         "total": len(queued_docs),
         "processed": processed,
         "failed": failed
+    }
+
+
+@router.post("/{engagement_id}/reset-stuck", tags=["admin"])
+async def reset_stuck_documents(
+    engagement_id: str,
+    hours_stuck: int = 1,
+    session: AsyncSession = Depends(get_session)
+):
+    """Reset documents stuck in processing/queued for too long and resend to Service Bus"""
+    logger.info(f"Resetting stuck documents for engagement {engagement_id} (stuck > {hours_stuck} hours)")
+    
+    # Verify engagement exists
+    engagement = await session.get(Engagement, engagement_id)
+    if not engagement:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+    
+    # Get Service Bus
+    service_bus = get_service_bus()
+    if not service_bus:
+        raise HTTPException(status_code=503, detail="Service Bus not configured")
+    
+    # Find stuck documents
+    cutoff_time = datetime.utcnow() - timedelta(hours=hours_stuck)
+    
+    result = await session.execute(
+        select(Document).where(
+            Document.engagement_id == engagement_id,
+            Document.status.in_(['processing', 'queued']),
+            Document.updated_at < cutoff_time
+        )
+    )
+    stuck_docs = result.scalars().all()
+    
+    if not stuck_docs:
+        return {"message": "No stuck documents found", "reset_count": 0}
+    
+    logger.info(f"Found {len(stuck_docs)} stuck documents")
+    
+    reset_count = 0
+    failed_count = 0
+    
+    # Reset and resend each document
+    for doc in stuck_docs:
+        try:
+            logger.info(f"Resetting: {doc.filename} (Status: {doc.status})")
+            
+            # Reset to queued
+            doc.status = 'queued'
+            doc.updated_at = datetime.utcnow()
+            doc.error_message = None
+            
+            # Resend to Service Bus
+            await service_bus.send_document_message(str(doc.engagement_id), str(doc.id))
+            
+            reset_count += 1
+            logger.info(f"✅ Reset and resent: {doc.filename}")
+            
+        except Exception as e:
+            failed_count += 1
+            logger.error(f"❌ Failed to reset {doc.filename}: {e}")
+    
+    await session.commit()
+    
+    return {
+        "message": f"Reset {reset_count} stuck documents",
+        "reset_count": reset_count,
+        "failed_count": failed_count,
+        "documents_reset": [doc.filename for doc in stuck_docs[:reset_count]]
     }
