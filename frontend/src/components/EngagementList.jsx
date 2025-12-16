@@ -379,7 +379,7 @@ export default function EngagementList({ onSelectEngagement }) {
                     </button>
                 </div>
             ) : (
-                <div className="grid gap-4">
+                <div className="grid gap-4 max-h-[calc(100vh-320px)] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                     {filteredEngagements.map((engagement) => (
                         <div
                             key={engagement.id}
