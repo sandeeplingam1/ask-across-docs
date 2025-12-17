@@ -47,7 +47,16 @@ async def verify_document_indexing(
             }
         
         # Get vector store
-        vector_store = get_vector_store()
+        # Get Azure Search client directly for filtering
+        from azure.core.credentials import AzureKeyCredential
+        from azure.search.documents import SearchClient
+        from app.config import settings
+        
+        search_client = SearchClient(
+            endpoint=settings.azure_search_endpoint,
+            index_name=settings.azure_search_index_name,
+            credential=AzureKeyCredential(settings.azure_search_api_key)
+        )
         
         verification_results = []
         issues = []
@@ -58,15 +67,16 @@ async def verify_document_indexing(
         for doc in documents:
             # Query AI Search for chunks with this document_id
             try:
-                # Search for chunks belonging to this document
-                search_results = await vector_store.search(
-                    query_text="*",  # Match all
-                    filter_expression=f"document_id eq '{doc.id}'",
-                    top_k=1000,  # Get all chunks
-                    include_embeddings=False
+                # Search for chunks belonging to this document using filter
+                search_results = search_client.search(
+                    search_text="*",
+                    filter=f"document_id eq '{doc.id}'",
+                    select="id,document_id,filename,chunk_index",
+                    top=1000  # Get all chunks
                 )
                 
-                ai_search_count = len(search_results)
+                # Count results
+                ai_search_count = len(list(search_results))
                 db_chunk_count = doc.chunk_count or 0
                 
                 status = "verified"
@@ -151,31 +161,41 @@ async def verify_single_document(
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
         
-        # Get vector store
-        vector_store = await get_vector_store()
+        # Get Azure Search client directly
+        from azure.core.credentials import AzureKeyCredential
+        from azure.search.documents import SearchClient
+        from app.config import settings
+        
+        search_client = SearchClient(
+            endpoint=settings.azure_search_endpoint,
+            index_name=settings.azure_search_index_name,
+            credential=AzureKeyCredential(settings.azure_search_api_key)
+        )
         
         # Search for chunks
-        search_results = await vector_store.search(
-            query_text="*",
-            filter_expression=f"document_id eq '{document_id}'",
-            top_k=10,  # Get sample of first 10 chunks
-            include_embeddings=False
+        search_results = search_client.search(
+            search_text="*",
+            filter=f"document_id eq '{document_id}'",
+            select="id,document_id,filename,chunk_index,content",
+            top=10  # Get sample of first 10 chunks
         )
+        
+        chunks_list = list(search_results)
         
         return {
             "document_id": document.id,
             "filename": document.filename,
             "status": document.status,
             "db_chunk_count": document.chunk_count or 0,
-            "ai_search_chunk_count_sample": len(search_results),
-            "chunks_exist": len(search_results) > 0,
+            "ai_search_chunk_count_sample": len(chunks_list),
+            "chunks_exist": len(chunks_list) > 0,
             "sample_chunks": [
                 {
                     "chunk_index": chunk.get("chunk_index", 0),
-                    "text_preview": chunk.get("text", "")[:200] + "..." if len(chunk.get("text", "")) > 200 else chunk.get("text", ""),
+                    "text_preview": chunk.get("content", "")[:200] + "..." if len(chunk.get("content", "")) > 200 else chunk.get("content", ""),
                     "page_number": chunk.get("page_number")
                 }
-                for chunk in search_results[:5]  # Show first 5
+                for chunk in chunks_list[:5]  # Show first 5
             ]
         }
         
