@@ -63,62 +63,73 @@ class ServiceBusService:
             logger.error(f"Failed to send Service Bus message: {str(e)}")
             # Don't raise - worker will pick it up via fallback polling
     
-    def receive_messages(self, max_wait_time: int = 60) -> list[dict]:
+    def receive_messages(self, max_wait_time: int = 60, max_message_count: int = 4) -> list[dict]:
         """
         Receive messages from the queue
         
         Args:
             max_wait_time: Maximum time to wait for messages (seconds)
+            max_message_count: Maximum number of messages to receive at once
             
         Returns:
-            List of message dictionaries with engagement_id and document_id
+            List of message dictionaries with engagement_id, document_id, and receiver
         """
         try:
             receiver = self.client.get_queue_receiver(
                 queue_name=self.queue_name,
-                max_wait_time=max_wait_time
+                max_wait_time=max_wait_time,
+                prefetch_count=max_message_count
             )
             
             messages = []
-            with receiver:
-                for msg in receiver:
-                    try:
-                        body = json.loads(str(msg))
-                        messages.append({
-                            "engagement_id": body.get("engagement_id"),
-                            "document_id": body.get("document_id"),
-                            "message": msg  # Keep reference for completion
-                        })
-                        logger.info(f"Received message for document {body.get('document_id')}")
-                    except Exception as e:
-                        logger.error(f"Failed to parse message: {str(e)}")
-                        receiver.complete_message(msg)  # Remove bad message
+            # Receive messages (don't use context manager - we need to keep receiver alive)
+            received_messages = receiver.receive_messages(
+                max_message_count=max_message_count,
+                max_wait_time=max_wait_time
+            )
+            
+            for msg in received_messages:
+                try:
+                    body = json.loads(str(msg))
+                    messages.append({
+                        "engagement_id": body.get("engagement_id"),
+                        "document_id": body.get("document_id"),
+                        "message": msg,
+                        "receiver": receiver  # Keep receiver for completion
+                    })
+                    logger.info(f"✅ Received message for document {body.get('document_id')}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to parse message: {str(e)}")
+                    receiver.complete_message(msg)  # Remove bad message
+            
+            # If no messages, close receiver immediately
+            if not messages:
+                receiver.close()
             
             return messages
             
         except ServiceBusError as e:
             logger.error(f"Failed to receive Service Bus messages: {str(e)}")
             return []
+        except Exception as e:
+            logger.error(f"Unexpected error receiving messages: {str(e)}", exc_info=True)
+            return []
     
-    def complete_message(self, message):
+    def complete_message(self, message, receiver):
         """Mark message as completed"""
         try:
-            receiver = self.client.get_queue_receiver(queue_name=self.queue_name)
-            with receiver:
-                receiver.complete_message(message)
-            logger.debug("Message completed successfully")
+            receiver.complete_message(message)
+            logger.info("✅ Message completed successfully")
         except Exception as e:
-            logger.error(f"Failed to complete message: {str(e)}")
+            logger.error(f"❌ Failed to complete message: {str(e)}")
     
-    def abandon_message(self, message):
+    def abandon_message(self, message, receiver):
         """Abandon message (will be retried)"""
         try:
-            receiver = self.client.get_queue_receiver(queue_name=self.queue_name)
-            with receiver:
-                receiver.abandon_message(message)
-            logger.debug("Message abandoned for retry")
+            receiver.abandon_message(message)
+            logger.warning("⚠️ Message abandoned for retry")
         except Exception as e:
-            logger.error(f"Failed to abandon message: {str(e)}")
+            logger.error(f"❌ Failed to abandon message: {str(e)}")
     
     def close(self):
         """Close the Service Bus client"""

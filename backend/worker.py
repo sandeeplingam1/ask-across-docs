@@ -315,16 +315,30 @@ class DocumentWorker:
     async def process_from_service_bus(self):
         """Process documents from Service Bus queue (event-driven)"""
         try:
-            messages = self.service_bus.receive_messages(max_wait_time=30)
+            # Receive up to 4 messages (parallel processing)
+            messages = self.service_bus.receive_messages(max_wait_time=30, max_message_count=4)
             
             if not messages:
                 return 0
             
+            logger.info(f"📥 Received {len(messages)} message(s) from Service Bus")
+            
             processed = 0
+            failed = 0
+            receivers_to_close = set()
+            
             async with AsyncSessionLocal() as session:
                 for msg_data in messages:
+                    document_id = None
                     try:
                         document_id = msg_data["document_id"]
+                        receiver = msg_data.get("receiver")
+                        message = msg_data.get("message")
+                        
+                        if receiver:
+                            receivers_to_close.add(receiver)
+                        
+                        logger.info(f"🔄 Processing document {document_id} from Service Bus")
                         
                         # Get document from database
                         result = await session.execute(
@@ -332,29 +346,56 @@ class DocumentWorker:
                         )
                         document = result.scalar_one_or_none()
                         
-                        if document and document.status == "queued":
-                            await self.process_document(document, session)
+                        if not document:
+                            logger.warning(f"⚠️ Document {document_id} not found in database")
+                            if receiver and message:
+                                self.service_bus.complete_message(message, receiver)
+                            continue
+                        
+                        if document.status != "queued":
+                            logger.warning(f"⚠️ Document {document_id} already {document.status}, skipping")
+                            if receiver and message:
+                                self.service_bus.complete_message(message, receiver)
+                            continue
+                        
+                        # Process the document
+                        success = await self.process_document(document, session)
+                        
+                        if success:
                             processed += 1
-                            
                             # Complete message (remove from queue)
-                            if "message" in msg_data:
-                                self.service_bus.complete_message(msg_data["message"])
+                            if receiver and message:
+                                self.service_bus.complete_message(message, receiver)
+                                logger.info(f"✅ Completed processing and removed message for {document.filename}")
                         else:
-                            # Document already processed or not found - complete message
-                            if "message" in msg_data:
-                                self.service_bus.complete_message(msg_data["message"])
-                            logger.warning(f"Document {document_id} not found or already processed")
+                            failed += 1
+                            # Abandon message for retry
+                            if receiver and message:
+                                self.service_bus.abandon_message(message, receiver)
+                                logger.warning(f"❌ Failed processing, message abandoned for retry: {document.filename}")
                             
                     except Exception as e:
-                        logger.error(f"Error processing message: {e}", exc_info=True)
+                        failed += 1
+                        logger.error(f"❌ Error processing message for document {document_id}: {e}", exc_info=True)
                         # Abandon message for retry
-                        if "message" in msg_data:
-                            self.service_bus.abandon_message(msg_data["message"])
+                        if "receiver" in msg_data and "message" in msg_data:
+                            try:
+                                self.service_bus.abandon_message(msg_data["message"], msg_data["receiver"])
+                            except:
+                                pass
             
+            # Close all receivers
+            for receiver in receivers_to_close:
+                try:
+                    receiver.close()
+                except:
+                    pass
+            
+            logger.info(f"📊 Batch complete: {processed} successful, {failed} failed")
             return processed
             
         except Exception as e:
-            logger.error(f"Error receiving Service Bus messages: {e}", exc_info=True)
+            logger.error(f"❌ Error in Service Bus processing: {e}", exc_info=True)
             return 0
     
     async def lease_recovery_loop(self):
