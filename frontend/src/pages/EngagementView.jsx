@@ -6,6 +6,7 @@ import ChatInterface from '../components/ChatInterface';
 import QuestionTemplateList from '../components/QuestionTemplateList';
 import DocumentViewer from '../components/DocumentViewer';
 import ProcessingProgress from '../components/ProcessingProgress';
+import IndexingVerification from '../components/IndexingVerification';
 import api from '../api';
 
 export default function EngagementView({ engagement, onBack }) {
@@ -115,6 +116,7 @@ export default function EngagementView({ engagement, onBack }) {
                             onUploadComplete={handleUploadComplete}
                         />
                         <ProcessingProgress engagementId={engagement.id} />
+                        <IndexingVerification engagementId={engagement.id} />
                         <DocumentList
                             engagement={engagement}
                             refreshTrigger={refreshDocuments}
