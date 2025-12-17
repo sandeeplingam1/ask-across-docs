@@ -75,11 +75,15 @@ class ServiceBusService:
             List of message dictionaries with engagement_id, document_id, and receiver
         """
         try:
+            logger.info(f"🔍 [DEBUG] Creating receiver for queue '{self.queue_name}' (max_wait={max_wait_time}s, max_msgs={max_message_count})")
+            
             receiver = self.client.get_queue_receiver(
                 queue_name=self.queue_name,
                 max_wait_time=max_wait_time,
                 prefetch_count=max_message_count
             )
+            
+            logger.info(f"🔍 [DEBUG] Receiver created, calling receive_messages()...")
             
             messages = []
             # Receive messages (don't use context manager - we need to keep receiver alive)
@@ -87,6 +91,8 @@ class ServiceBusService:
                 max_message_count=max_message_count,
                 max_wait_time=max_wait_time
             )
+            
+            logger.info(f"🔍 [DEBUG] SDK returned {len(received_messages)} message(s)")
             
             for msg in received_messages:
                 try:

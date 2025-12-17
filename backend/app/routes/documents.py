@@ -518,3 +518,75 @@ async def requeue_all_queued_documents(
         "failed_count": failed_count,
         "document_filenames": [doc.filename for doc in docs[:queued_count]]
     }
+
+
+@router.post("/recover-deadletter", tags=["admin"])
+async def recover_deadletter_messages(
+    engagement_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    """
+    Recover messages from Service Bus dead letter queue by resending fresh messages.
+    This clears the DLQ and retriggers processing for all queued documents.
+    """
+    logger.info(f"Recovering dead letter messages for engagement {engagement_id}")
+    
+    # Verify engagement exists
+    engagement = await session.get(Engagement, engagement_id)
+    if not engagement:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+    
+    # Get Service Bus
+    service_bus = get_service_bus()
+    if not service_bus:
+        raise HTTPException(status_code=503, detail="Service Bus not configured")
+    
+    # Get all queued documents (these likely have DLQ messages)
+    result = await session.execute(
+        select(Document).where(
+            Document.engagement_id == engagement_id,
+            Document.status == 'queued'
+        )
+    )
+    queued_docs = result.scalars().all()
+    
+    if not queued_docs:
+        return {
+            "message": "No queued documents to recover",
+            "recovered_count": 0,
+            "note": "All documents may be completed or in progress"
+        }
+    
+    logger.info(f"Found {len(queued_docs)} queued documents - sending fresh messages")
+    
+    recovered_count = 0
+    failed_count = 0
+    
+    # Send fresh messages for all queued documents
+    # Note: Original DLQ messages will remain until manually purged, but new messages will process
+    for doc in queued_docs:
+        try:
+            # Reset processing attempts to give fresh start
+            doc.processing_attempts = 0
+            doc.updated_at = datetime.utcnow()
+            doc.error_message = None
+            
+            # Send new message to Service Bus
+            await service_bus.send_document_message(str(doc.engagement_id), str(doc.id))
+            
+            recovered_count += 1
+            logger.info(f"✅ Sent fresh message for: {doc.filename}")
+            
+        except Exception as e:
+            failed_count += 1
+            logger.error(f"❌ Failed to send message for {doc.filename}: {e}")
+    
+    await session.commit()
+    
+    return {
+        "message": f"Sent {recovered_count} fresh messages to bypass DLQ",
+        "recovered_count": recovered_count,
+        "failed_count": failed_count,
+        "documents": [doc.filename for doc in queued_docs[:recovered_count]],
+        "note": "Original DLQ messages remain but will not block new processing. Workers will process fresh messages with lock renewal enabled."
+    }

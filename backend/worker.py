@@ -312,6 +312,22 @@ class DocumentWorker:
             logger.error(f"Error in batch processing: {e}", exc_info=True)
             return 0
     
+    async def auto_renew_lock(self, message, receiver, document_id: str):
+        """Background task to automatically renew message lock during long processing"""
+        try:
+            while True:
+                await asyncio.sleep(120)  # Renew every 2 minutes (lock is 5 min)
+                try:
+                    # Run sync renewal in thread executor
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(None, receiver.renew_message_lock, message)
+                    logger.info(f"🔄 Renewed lock for document {document_id}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Lock renewal failed for {document_id}: {str(e)}")
+                    break
+        except asyncio.CancelledError:
+            logger.debug(f"Lock renewal stopped for {document_id}")
+    
     async def process_from_service_bus(self):
         """Process documents from Service Bus queue (event-driven)"""
         try:
@@ -330,6 +346,7 @@ class DocumentWorker:
             async with AsyncSessionLocal() as session:
                 for msg_data in messages:
                     document_id = None
+                    renewal_task = None
                     try:
                         document_id = msg_data["document_id"]
                         receiver = msg_data.get("receiver")
@@ -358,8 +375,23 @@ class DocumentWorker:
                                 self.service_bus.complete_message(message, receiver)
                             continue
                         
+                        # Start automatic lock renewal in background
+                        if receiver and message:
+                            renewal_task = asyncio.create_task(
+                                self.auto_renew_lock(message, receiver, document_id)
+                            )
+                            logger.info(f"🔐 Started lock renewal for {document_id}")
+                        
                         # Process the document
                         success = await self.process_document(document, session)
+                        
+                        # Stop lock renewal
+                        if renewal_task:
+                            renewal_task.cancel()
+                            try:
+                                await renewal_task
+                            except asyncio.CancelledError:
+                                pass
                         
                         if success:
                             processed += 1
@@ -375,6 +407,14 @@ class DocumentWorker:
                                 logger.warning(f"❌ Failed processing, message abandoned for retry: {document.filename}")
                             
                     except Exception as e:
+                        # Stop lock renewal on error
+                        if renewal_task:
+                            renewal_task.cancel()
+                            try:
+                                await renewal_task
+                            except asyncio.CancelledError:
+                                pass
+                        
                         failed += 1
                         logger.error(f"❌ Error processing message for document {document_id}: {e}", exc_info=True)
                         # Abandon message for retry
