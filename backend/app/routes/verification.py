@@ -47,7 +47,7 @@ async def verify_document_indexing(
             }
         
         # Get vector store
-        vector_store = await get_vector_store()
+        vector_store = get_vector_store()
         
         verification_results = []
         issues = []
