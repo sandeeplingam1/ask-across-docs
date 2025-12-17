@@ -73,6 +73,11 @@ export const questionApi = {
         api.delete(`/engagements/${engagementId}/history`),
 };
 
+// Progress
+export const progressApi = {
+    get: (engagementId) => api.get(`/engagements/${engagementId}/progress`),
+};
+
 // Question Templates
 export const questionTemplateApi = {
     list: () => api.get('/question-templates/'),

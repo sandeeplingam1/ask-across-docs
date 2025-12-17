@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle, Clock, AlertCircle, Loader2, FileText } from 'lucide-react';
+import { progressApi } from '../api';
 
 export default function ProcessingProgress({ engagementId }) {
   const [progress, setProgress] = useState(null);
@@ -10,9 +11,8 @@ export default function ProcessingProgress({ engagementId }) {
 
     const fetchProgress = async () => {
       try {
-        const response = await fetch(`/api/engagements/${engagementId}/progress`);
-        const data = await response.json();
-        setProgress(data);
+        const response = await progressApi.get(engagementId);
+        setProgress(response.data);
         setLoading(false);
       } catch (error) {
         console.error('Failed to fetch progress:', error);
