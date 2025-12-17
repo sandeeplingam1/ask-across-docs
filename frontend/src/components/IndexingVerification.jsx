@@ -10,12 +10,28 @@ export default function IndexingVerification({ engagementId }) {
     setLoading(true);
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/engagements/${engagementId}/documents/verify-indexing`
+        `${import.meta.env.VITE_API_URL || 'https://auditapp-staging-backend.graydune-dadabae1.eastus.azurecontainerapps.io'}/api/engagements/${engagementId}/documents/verify-indexing`
       );
+      
+      if (!response.ok) {
+        console.error('Verification API returned:', response.status);
+        setVerification(null);
+        return;
+      }
+      
       const data = await response.json();
+      
+      // Validate data structure
+      if (!data || !data.summary) {
+        console.error('Invalid verification data:', data);
+        setVerification(null);
+        return;
+      }
+      
       setVerification(data);
     } catch (error) {
       console.error('Failed to verify indexing:', error);
+      setVerification(null);
     } finally {
       setLoading(false);
     }
@@ -57,7 +73,7 @@ export default function IndexingVerification({ engagementId }) {
     );
   }
 
-  if (!verification || verification.summary.total_documents === 0) {
+  if (!verification || !verification.summary || verification.summary.total_documents === 0) {
     return null;
   }
 
