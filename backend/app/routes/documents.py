@@ -335,6 +335,59 @@ async def process_queued_documents_old(
     }
 
 
+@router.post("/trigger-processing", tags=["admin"])
+async def trigger_processing(
+    engagement_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    """Manually trigger processing for all queued documents by sending Service Bus messages"""
+    logger.info(f"Triggering processing for all queued documents in engagement {engagement_id}")
+    
+    # Verify engagement exists
+    engagement = await session.get(Engagement, engagement_id)
+    if not engagement:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+    
+    # Get Service Bus
+    service_bus = get_service_bus()
+    if not service_bus:
+        raise HTTPException(status_code=503, detail="Service Bus not configured")
+    
+    # Find all queued documents
+    result = await session.execute(
+        select(Document).where(
+            Document.engagement_id == engagement_id,
+            Document.status == 'queued'
+        )
+    )
+    queued_docs = result.scalars().all()
+    
+    if not queued_docs:
+        return {"message": "No queued documents found", "triggered_count": 0}
+    
+    logger.info(f"Found {len(queued_docs)} queued documents")
+    
+    triggered_count = 0
+    failed_count = 0
+    
+    # Send Service Bus message for each queued document
+    for doc in queued_docs:
+        try:
+            await service_bus.send_document_message(str(doc.engagement_id), str(doc.id))
+            triggered_count += 1
+            logger.info(f"✅ Triggered processing: {doc.filename}")
+        except Exception as e:
+            failed_count += 1
+            logger.error(f"❌ Failed to trigger {doc.filename}: {e}")
+    
+    return {
+        "message": f"Triggered processing for {triggered_count} documents",
+        "triggered_count": triggered_count,
+        "failed_count": failed_count,
+        "documents_triggered": [doc.filename for doc in queued_docs[:triggered_count]]
+    }
+
+
 @router.post("/reset-stuck", tags=["admin"])
 async def reset_stuck_documents(
     engagement_id: str,

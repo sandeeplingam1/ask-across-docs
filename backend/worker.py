@@ -69,47 +69,95 @@ class DocumentWorker:
         logger.info(f"Received signal {signum}, initiating graceful shutdown...")
         self.running = False
     
-    async def reset_stuck_documents(self):
-        """Reset documents stuck in processing state"""
+    async def recover_expired_leases(self):
+        """Find and release expired leases for automatic retry"""
         try:
             async with AsyncSessionLocal() as session:
-                threshold = datetime.utcnow() - timedelta(seconds=self.stuck_document_threshold)
+                from sqlalchemy import text
                 
-                query = select(Document).where(
-                    Document.status == "processing",
-                    ((Document.processing_started_at < threshold) | 
-                     (Document.processing_started_at.is_(None)))
-                )
+                # Call stored procedure to find expired leases
+                result = await session.execute(text("EXEC find_expired_leases"))
+                expired_docs = result.fetchall()
                 
-                result = await session.execute(query)
-                stuck_docs = result.scalars().all()
-                
-                if stuck_docs:
-                    logger.warning(f"Found {len(stuck_docs)} stuck documents, resetting to queued")
-                    for doc in stuck_docs:
-                        doc.status = "queued"
-                        doc.progress = 0
-                        doc.error_message = None
-                        doc.processing_started_at = None
-                    await session.commit()
-                    logger.info(f"Reset {len(stuck_docs)} stuck documents")
-                else:
-                    logger.info("No stuck documents found")
+                if expired_docs:
+                    logger.warning(f"Found {len(expired_docs)} expired leases, releasing for retry")
+                    for doc_row in expired_docs:
+                        doc_id = doc_row[0]
+                        filename = doc_row[1]
+                        attempts = doc_row[2]
+                        max_retries = doc_row[3]
+                        logger.info(f"Releasing expired lease: {filename} (attempt {attempts}/{max_retries})")
+                        
+                        # Release lease (will auto-queue for retry)
+                        await self.release_lease(session, doc_id, success=False, error_message="Lease expired - worker may have crashed")
+                    
+                    logger.info(f"Released {len(expired_docs)} expired leases")
         except Exception as e:
-            logger.error(f"Error resetting stuck documents: {e}", exc_info=True)
+            logger.error(f"Error recovering expired leases: {e}", exc_info=True)
+    
+    async def reset_stuck_documents(self):
+        """Legacy method - now handled by lease expiration recovery"""
+        # This method is replaced by recover_expired_leases()
+        # Keep it for backward compatibility but log a warning
+        logger.info("reset_stuck_documents() called - now handled by recover_expired_leases() with lease management")
+        await self.recover_expired_leases()
+    
+    async def acquire_lease(self, session, document_id: str) -> bool:
+        """Acquire lease for document using stored procedure"""
+        try:
+            from sqlalchemy import text
+            # Use RETURN value from stored procedure
+            result = await session.execute(
+                text("""
+                    DECLARE @acquired BIT;
+                    EXEC acquire_document_lease :doc_id, 5, @acquired OUTPUT;
+                    SELECT @acquired as acquired;
+                """),
+                {"doc_id": document_id}
+            )
+            row = result.fetchone()
+            acquired = bool(row[0]) if row else False
+            await session.commit()  # Commit the lease acquisition
+            return acquired
+        except Exception as e:
+            logger.error(f"Failed to acquire lease for {document_id}: {e}")
+            return False
+    
+    async def release_lease(self, session, document_id: str, success: bool, error_message: str = None):
+        """Release lease for document using stored procedure"""
+        try:
+            from sqlalchemy import text
+            await session.execute(
+                text("EXEC release_document_lease @p_document_id = :doc_id, @p_success = :success, @p_error_message = :error"),
+                {
+                    "doc_id": document_id,
+                    "success": 1 if success else 0,
+                    "error": error_message[:1000] if error_message else None
+                }
+            )
+            await session.commit()
+        except Exception as e:
+            logger.error(f"Failed to release lease for {document_id}: {e}")
     
     async def process_document(self, document, session):
-        """Process a single document with full error isolation"""
+        """Process a single document with full error isolation and lease management"""
         doc_id = document.id
         filename = document.filename
+        lease_acquired = False
         
         try:
-            logger.info(f"Starting document {doc_id}: {filename}")
+            # CRITICAL: Acquire lease FIRST (atomic operation)
+            lease_acquired = await self.acquire_lease(session, doc_id)
+            if not lease_acquired:
+                logger.warning(f"Could not acquire lease for {filename} - skipping (may be at max retries or already processing)")
+                return False
             
-            # Mark as processing
-            document.status = "processing"
+            # Refresh document to get updated values
+            await session.refresh(document)
+            logger.info(f"Starting document {doc_id} (attempt {document.processing_attempts}/{document.max_retries}): {filename}")
+            
+            # Update progress
             document.progress = 10
-            document.processing_started_at = datetime.utcnow()
             await session.commit()
             
             # Download file
@@ -182,36 +230,46 @@ class DocumentWorker:
                 timeout=60.0
             )
             
-            # Mark as completed
-            document.status = "completed"
+            # Update chunk count
             document.chunk_count = len(chunks)
             document.progress = 100
-            document.error_message = None
-            document.processing_completed_at = datetime.utcnow()
             await session.commit()
             
-            logger.info(f"✅ Completed {filename} - {len(chunks)} chunks indexed")
+            # Release lease with SUCCESS
+            await self.release_lease(session, doc_id, success=True)
+            
+            # Refresh to see final status
+            await session.refresh(document)
+            logger.info(f"✅ Completed {filename} - {len(chunks)} chunks indexed - Status: {document.status}")
             return True
             
         except asyncio.TimeoutError as e:
             error_msg = f"Timeout during processing: {str(e)}"
             logger.error(f"❌ {filename}: {error_msg}")
-            document.status = "failed"
-            document.error_message = error_msg[:500]
-            document.progress = 0
-            await session.commit()
+            
+            # Release lease with FAILURE (will retry if attempts < max_retries)
+            if lease_acquired:
+                await self.release_lease(session, doc_id, success=False, error_message=error_msg)
+            else:
+                document.status = "failed"
+                document.error_message = error_msg[:500]
+                await session.commit()
             return False
             
         except Exception as e:
             error_msg = str(e)[:500]
             logger.error(f"❌ {filename}: {error_msg}", exc_info=True)
-            try:
-                document.status = "failed"
-                document.error_message = error_msg
-                document.progress = 0
-                await session.commit()
-            except:
-                logger.error(f"Failed to update error status for {doc_id}")
+            
+            # Release lease with FAILURE
+            if lease_acquired:
+                await self.release_lease(session, doc_id, success=False, error_message=error_msg)
+            else:
+                try:
+                    document.status = "failed"
+                    document.error_message = error_msg
+                    await session.commit()
+                except:
+                    logger.error(f"Failed to update error status for {doc_id}")
             return False
     
     async def process_batch(self):
@@ -299,6 +357,18 @@ class DocumentWorker:
             logger.error(f"Error receiving Service Bus messages: {e}", exc_info=True)
             return 0
     
+    async def lease_recovery_loop(self):
+        """Background task to recover expired leases every 5 minutes"""
+        logger.info("Lease recovery loop started (runs every 5 minutes)")
+        
+        while self.running:
+            try:
+                await asyncio.sleep(300)  # 5 minutes
+                if self.running:
+                    await self.recover_expired_leases()
+            except Exception as e:
+                logger.error(f"Error in lease recovery loop: {e}", exc_info=True)
+    
     async def run(self):
         """Main worker loop with Service Bus support"""
         logger.info("🚀 Document Worker Starting...")
@@ -311,39 +381,51 @@ class DocumentWorker:
             logger.error(f"Failed to initialize database: {e}", exc_info=True)
             return
         
-        # Reset stuck documents on startup
-        await self.reset_stuck_documents()
+        # Recover expired leases on startup
+        await self.recover_expired_leases()
+        
+        # Start background lease recovery task
+        recovery_task = asyncio.create_task(self.lease_recovery_loop())
         
         if self.service_bus:
             logger.info("📋 Worker ready - listening for Service Bus messages (instant processing)...")
+            logger.info("🔒 Lease management enabled (5-minute expiration, auto-retry up to 3 attempts)")
         else:
             logger.info("📋 Worker ready - polling database (fallback mode)...")
         
         idle_count = 0
         
-        while self.running:
+        try:
+            while self.running:
+                try:
+                    # Use Service Bus if available, otherwise fall back to polling
+                    if self.service_bus:
+                        processed = await self.process_from_service_bus()
+                    else:
+                        processed = await self.process_batch()
+                    
+                    if processed > 0:
+                        idle_count = 0
+                        logger.info(f"Batch complete - processed {processed} document(s)")
+                    else:
+                        idle_count += 1
+                        if idle_count % 6 == 1:  # Log every minute
+                            logger.debug("No documents/messages in queue, waiting...")
+                    
+                    # Shorter wait with Service Bus (it has its own timeout)
+                    wait_time = 5 if self.service_bus else self.poll_interval
+                    await asyncio.sleep(wait_time)
+                    
+                except Exception as e:
+                    logger.error(f"Unexpected error in worker loop: {e}", exc_info=True)
+                    await asyncio.sleep(self.poll_interval)
+        finally:
+            # Cancel recovery task on shutdown
+            recovery_task.cancel()
             try:
-                # Use Service Bus if available, otherwise fall back to polling
-                if self.service_bus:
-                    processed = await self.process_from_service_bus()
-                else:
-                    processed = await self.process_batch()
-                
-                if processed > 0:
-                    idle_count = 0
-                    logger.info(f"Batch complete - processed {processed} document(s)")
-                else:
-                    idle_count += 1
-                    if idle_count % 6 == 1:  # Log every minute
-                        logger.debug("No documents/messages in queue, waiting...")
-                
-                # Shorter wait with Service Bus (it has its own timeout)
-                wait_time = 5 if self.service_bus else self.poll_interval
-                await asyncio.sleep(wait_time)
-                
-            except Exception as e:
-                logger.error(f"Unexpected error in worker loop: {e}", exc_info=True)
-                await asyncio.sleep(self.poll_interval)
+                await recovery_task
+            except asyncio.CancelledError:
+                pass
         
         logger.info("👋 Worker shutdown complete")
 

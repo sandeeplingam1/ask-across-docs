@@ -44,6 +44,12 @@ class Document(Base):
     processing_completed_at = Column(DateTime, nullable=True)
     uploaded_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
+    
+    # Production patterns: Lease management and retry logic
+    lease_expires_at = Column(DateTime, nullable=True)
+    processing_attempts = Column(Integer, default=0)
+    max_retries = Column(Integer, default=3)
+    last_error = Column(Text, nullable=True)
 
 
 class QuestionAnswer(Base):
@@ -57,6 +63,19 @@ class QuestionAnswer(Base):
     sources = Column(Text, nullable=True)  # JSON string of source chunks
     confidence = Column(String(20), default="high")
     answered_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+
+
+class OutboxMessage(Base):
+    """Transactional outbox pattern for Service Bus messages"""
+    __tablename__ = "document_processing_outbox"
+    
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    document_id = Column(String(36), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    message_type = Column(String(50), nullable=False, default="process_document")
+    payload = Column(Text, nullable=False)  # JSON message payload
+    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now())
+    processed_at = Column(DateTime, nullable=True)
+    attempts = Column(Integer, default=0)
 
 
 class QuestionTemplate(Base):
