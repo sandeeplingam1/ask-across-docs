@@ -332,12 +332,15 @@ class DocumentWorker:
         """Process documents from Service Bus queue (event-driven)"""
         try:
             # Receive up to 4 messages (parallel processing)
+            logger.info("🔍 Attempting to receive messages from Service Bus...")
             messages = self.service_bus.receive_messages(max_wait_time=30, max_message_count=4)
             
             if not messages:
+                logger.info("📭 No messages received from Service Bus")
                 return 0
             
             logger.info(f"📥 Received {len(messages)} message(s) from Service Bus")
+            logger.info(f"📦 Message details: {[msg.get('document_id', 'unknown') for msg in messages]}")
             
             processed = 0
             failed = 0
@@ -383,7 +386,9 @@ class DocumentWorker:
                             logger.info(f"🔐 Started lock renewal for {document_id}")
                         
                         # Process the document
+                        logger.info(f"🚀 Starting process_document for {document.filename}...")
                         success = await self.process_document(document, session)
+                        logger.info(f"{'✅' if success else '❌'} process_document returned success={success} for {document.filename}")
                         
                         # Stop lock renewal
                         if renewal_task:
@@ -435,7 +440,9 @@ class DocumentWorker:
             return processed
             
         except Exception as e:
-            logger.error(f"❌ Error in Service Bus processing: {e}", exc_info=True)
+            logger.error(f"❌ CRITICAL: Error in Service Bus processing: {e}", exc_info=True)
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             return 0
     
     async def lease_recovery_loop(self):
