@@ -40,27 +40,31 @@ class ServiceBusService:
             engagement_id: The engagement ID
             document_id: The document ID to process
         """
+        import asyncio
         try:
-            sender = self.client.get_queue_sender(queue_name=self.queue_name)
+            # Run synchronous Service Bus operations in thread pool
+            def _send():
+                sender = self.client.get_queue_sender(queue_name=self.queue_name)
+                
+                message_body = {
+                    "engagement_id": engagement_id,
+                    "document_id": document_id,
+                    "message_type": "document_processing"
+                }
+                
+                message = ServiceBusMessage(
+                    body=json.dumps(message_body),
+                    content_type="application/json"
+                )
+                
+                sender.send_messages(message)
+                sender.close()
+                logger.info(f"✅ Sent Service Bus message for document {document_id}")
             
-            message_body = {
-                "engagement_id": engagement_id,
-                "document_id": document_id,
-                "message_type": "document_processing"
-            }
-            
-            message = ServiceBusMessage(
-                body=json.dumps(message_body),
-                content_type="application/json"
-            )
-            
-            sender.send_messages(message)
-            sender.close()
-            
-            logger.info(f"Sent Service Bus message for document {document_id}")
+            await asyncio.to_thread(_send)
             
         except ServiceBusError as e:
-            logger.error(f"Failed to send Service Bus message: {str(e)}")
+            logger.error(f"❌ Failed to send Service Bus message: {str(e)}")
             # Don't raise - worker will pick it up via fallback polling
     
     def receive_messages(self, max_wait_time: int = 60, max_message_count: int = 4) -> list[dict]:

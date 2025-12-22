@@ -432,6 +432,54 @@ async def trigger_processing(
     }
 
 
+@router.post("/fix-null-values", tags=["admin"])
+async def fix_null_values(
+    engagement_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    """Fix NULL processing_attempts and max_retries for queued documents"""
+    from sqlalchemy import update
+    
+    result = await session.execute(
+        update(Document)
+        .where(Document.engagement_id == engagement_id)
+        .where(Document.status == 'queued')
+        .values(
+            processing_attempts=0,
+            max_retries=3,
+            lease_expires_at=None
+        )
+    )
+    await session.commit()
+    
+    return {
+        "message": f"Fixed NULL values for {result.rowcount} documents",
+        "fixed_count": result.rowcount
+    }
+
+
+@router.post("/clear-message-timestamps", tags=["admin"])
+async def clear_message_timestamps(
+    engagement_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    """Clear message_enqueued_at timestamps to allow re-triggering processing"""
+    from sqlalchemy import update
+    
+    result = await session.execute(
+        update(Document)
+        .where(Document.engagement_id == engagement_id)
+        .where(Document.status == 'queued')
+        .values(message_enqueued_at=None)
+    )
+    await session.commit()
+    
+    return {
+        "message": f"Cleared message timestamps for {result.rowcount} documents",
+        "cleared_count": result.rowcount
+    }
+
+
 @router.post("/reset-stuck", tags=["admin"])
 async def reset_stuck_documents(
     engagement_id: str,

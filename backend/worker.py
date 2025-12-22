@@ -211,17 +211,16 @@ class DocumentWorker:
                     timeout=10.0
                 )
             except asyncio.TimeoutError:
-                logger.error(f"❌ LEASE ACQUISITION TIMED OUT (10s) for {filename} - DB HANG CONFIRMED")
-                return "SKIP_COMPLETE"
+                logger.error(f"❌ LEASE ACQUISITION TIMED OUT (10s) for {filename} - DB HANG - ABANDONING for retry")
+                return False  # Abandon and retry
             
             if not lease_acquired:
-                logger.info(f"⏸️  Lease NOT acquired for {filename} - document likely already being processed by another worker or at max retries. COMPLETING message (not retrying).")
-                # COMPLETE MESSAGE: DB lease failure is NOT a transient error - it means:
-                # 1. Another worker is actively processing this document (valid lease)
-                # 2. OR document has hit max retry attempts
-                # Retrying the message won't help and causes infinite retry loops.
-                # Completing the message releases it from the queue properly.
-                return "SKIP_COMPLETE"
+                logger.warning(f"⚠️ Lease NOT acquired for {filename} - another worker holds it OR max retries hit. ABANDONING message for retry.")
+                # ABANDON MESSAGE: Lease contention is NOT success - retry later
+                # If another worker has the lease, they'll finish it
+                # If max retries hit, stored procedure will mark it failed
+                # Either way, we should NOT complete the message
+                return False  # Abandon and retry
             
             logger.info(f"🟡 DOC {doc_id}: LEASE ACQUIRED (%.1fs)", time.time() - start_time)
             
@@ -247,16 +246,31 @@ class DocumentWorker:
             await session.commit()
             
             phase_start = time.time()
-            logger.info(f"🟡 DOC {doc_id}: OCR/EXTRACTION START")
-            extraction_result = await asyncio.wait_for(
-                asyncio.to_thread(
-                    self.doc_processor.extract_with_metadata,
-                    BytesIO(file_content),
-                    filename
-                ),
-                timeout=120.0
-            )
-            logger.info(f"🟡 DOC {doc_id}: OCR/EXTRACTION DONE (%.1fs)", time.time() - phase_start)
+            logger.info(f"🟡 DOC {doc_id}: TEXT EXTRACTION START (file_type={document.file_type})")
+            
+            # PRODUCTION FIX: Longer timeout for AI Document Intelligence
+            # AI extraction can take 2-5 minutes for complex documents
+            extraction_timeout = 600  # 10 minutes max
+            
+            try:
+                extraction_result = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self.doc_processor.extract_with_metadata,
+                        BytesIO(file_content),
+                        filename
+                    ),
+                    timeout=extraction_timeout
+                )
+                elapsed = time.time() - phase_start
+                logger.info(f"✅ DOC {doc_id}: TEXT EXTRACTION DONE ({elapsed:.1f}s)")
+                
+            except asyncio.TimeoutError:
+                elapsed = time.time() - phase_start
+                raise ValueError(f"Text extraction timed out after {elapsed:.1f}s (max: {extraction_timeout}s). Document may be too complex or DI service is slow.")
+            except Exception as e:
+                elapsed = time.time() - phase_start
+                logger.error(f"❌ DOC {doc_id}: TEXT EXTRACTION FAILED after {elapsed:.1f}s: {type(e).__name__}: {str(e)}")
+                raise
             
             text = extraction_result['text']
             pages_info = extraction_result['pages']
@@ -484,19 +498,13 @@ class DocumentWorker:
                             # Complete message (remove from queue)
                             if receiver and message:
                                 self.service_bus.complete_message(message, receiver)
-                                logger.info(f"✅ Completed processing and removed message for {document.filename}")
-                        elif success == "SKIP_COMPLETE":
-                            # Lease collision - another worker is processing, complete message to prevent retry loop
-                            logger.info(f"⏭️  Skipping {document.filename} (lease held elsewhere), completing message to prevent duplicate processing")
-                            if receiver and message:
-                                self.service_bus.complete_message(message, receiver)
-                            # Don't count as processed or failed - another worker has it
+                                logger.info(f"✅ SUCCESS: Completed processing and removed message for {document.filename}")
                         else:
+                            # ANY failure (False) → abandon for retry
                             failed += 1
-                            # Abandon message for retry (genuine processing failure)
                             if receiver and message:
                                 self.service_bus.abandon_message(message, receiver)
-                                logger.warning(f"❌ Failed processing, message abandoned for retry: {document.filename}")
+                                logger.warning(f"❌ ABANDONED: Failed processing, message will retry: {document.filename}")
                             
                     except Exception as e:
                         # Stop lock renewal on error

@@ -96,18 +96,37 @@ class AIDocumentExtractor:
     
     def _extract_with_document_intelligence(self, file_content: BinaryIO, filename: str) -> Dict:
         """Extract using Azure Document Intelligence (AI-First)"""
+        import time
         logger.info(f"🤖 Using AI extraction for: {filename}")
         
         # Reset file pointer
         file_content.seek(0)
         file_bytes = file_content.read()
+        file_size_mb = len(file_bytes) / (1024 * 1024)
+        
+        logger.info(f"📄 Document size: {file_size_mb:.2f} MB")
         
         # Analyze document with "prebuilt-document" model (handles all formats)
-        poller = self.client.begin_analyze_document(
-            "prebuilt-document",
-            document=file_bytes
-        )
-        result = poller.result()
+        start_time = time.time()
+        try:
+            poller = self.client.begin_analyze_document(
+                "prebuilt-document",
+                document=file_bytes
+            )
+            
+            # PRODUCTION FIX: Add timeout based on file size
+            # Base: 60s + 30s per MB (reasonable for complex documents)
+            timeout_seconds = max(60, int(60 + (file_size_mb * 30)))
+            logger.info(f"⏱️  DI timeout set to {timeout_seconds}s for {file_size_mb:.2f}MB file")
+            
+            result = poller.result(timeout=timeout_seconds)
+            elapsed = time.time() - start_time
+            logger.info(f"✅ DI analysis completed in {elapsed:.1f}s")
+            
+        except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error(f"❌ DI analysis failed after {elapsed:.1f}s: {type(e).__name__}: {str(e)}")
+            raise
         
         # Extract text with page information
         pages_metadata = []
