@@ -5,6 +5,11 @@ from pathlib import Path
 from typing import BinaryIO, Optional
 import PyPDF2
 from docx import Document as DocxDocument
+from app.services.ai_document_extractor import AIDocumentExtractor
+from app.config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Optional imports with fallback
 try:
@@ -22,7 +27,7 @@ except ImportError:
 
 
 class DocumentProcessor:
-    """Handles document parsing and text extraction"""
+    """Handles document parsing and text extraction with AI-First approach"""
     
     SUPPORTED_TYPES = {
         ".pdf": "application/pdf",
@@ -38,7 +43,7 @@ class DocumentProcessor:
     
     def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 200):
         """
-        Initialize document processor
+        Initialize document processor with AI-First extraction
         
         Args:
             chunk_size: Target size for text chunks (in characters)
@@ -46,6 +51,19 @@ class DocumentProcessor:
         """
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
+        
+        # Initialize AI Document Extractor if configured
+        self.ai_extractor = None
+        if settings.use_document_intelligence:
+            try:
+                self.ai_extractor = AIDocumentExtractor(
+                    document_intelligence_endpoint=settings.azure_document_intelligence_endpoint,
+                    document_intelligence_key=settings.azure_document_intelligence_key,
+                    use_azure_ad=settings.use_azure_ad_auth
+                )
+                logger.info("✅ AI Document Extractor initialized")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to initialize AI extractor: {e}. Using basic parsers.")
     
     def is_supported(self, filename: str) -> bool:
         """Check if file type is supported"""
@@ -73,15 +91,28 @@ class DocumentProcessor:
     
     def extract_with_metadata(self, file_content: BinaryIO, filename: str) -> dict:
         """
-        Extract text with metadata (page numbers, paragraph info)
+        Extract text with metadata using AI-First approach
         
         Args:
             file_content: File binary content
             filename: Original filename to determine type
             
         Returns:
-            Dict with 'text' and 'pages' metadata
+            Dict with 'text', 'pages' metadata, and 'extraction_method'
         """
+        # Try AI extraction first if available
+        if self.ai_extractor:
+            try:
+                logger.info(f"🤖 Attempting AI extraction for: {filename}")
+                result = self.ai_extractor.extract_with_metadata(file_content, filename)
+                logger.info(f"✅ AI extraction successful: {result.get('extraction_method')}")
+                return result
+            except Exception as e:
+                logger.warning(f"⚠️ AI extraction failed: {e}. Falling back to basic parser.")
+                file_content.seek(0)  # Reset file pointer
+        
+        # Fallback to basic parsers
+        logger.info(f"📄 Using basic parser for: {filename}")
         ext = Path(filename).suffix.lower()
         
         if ext == ".pdf":
@@ -160,17 +191,18 @@ class DocumentProcessor:
         return data['text']
     
     def _extract_docx_with_paragraphs(self, file_content: BinaryIO) -> dict:
-        """Extract text from DOCX with paragraph metadata"""
+        """Extract text from DOCX with paragraph metadata - NOW INCLUDES TABLES!"""
         try:
             doc = DocxDocument(file_content)
-            paragraphs = []
+            text_parts = []
             pages_metadata = []
             current_char = 0
             
+            # Extract paragraphs
             for para_num, para in enumerate(doc.paragraphs):
                 if para.text.strip():
                     para_text = para.text
-                    paragraphs.append(para_text)
+                    text_parts.append(para_text)
                     
                     # Track paragraph as "page" for consistency
                     pages_metadata.append({
@@ -181,10 +213,28 @@ class DocumentProcessor:
                     })
                     current_char += len(para_text) + 2  # +2 for "\n\n"
             
-            full_text = "\n\n".join(paragraphs)
+            # CRITICAL FIX: Extract tables (was completely missing!)
+            if doc.tables:
+                logger.info(f"📊 Extracting {len(doc.tables)} tables from DOCX")
+                text_parts.append("\n=== TABLES ===")
+                
+                for table_num, table in enumerate(doc.tables, start=1):
+                    text_parts.append(f"\n--- Table {table_num} ---")
+                    
+                    for row in table.rows:
+                        row_text = " | ".join([cell.text.strip() for cell in row.cells])
+                        if row_text.strip():
+                            text_parts.append(row_text)
+                    
+                    text_parts.append("")  # Blank line between tables
+            
+            full_text = "\n\n".join(text_parts)
+            logger.info(f"✅ Enhanced DOCX extraction: {len(full_text)} chars, {len(doc.paragraphs)} paragraphs, {len(doc.tables)} tables")
+            
             return {
                 'text': full_text,
-                'pages': pages_metadata
+                'pages': pages_metadata,
+                'extraction_method': 'enhanced_docx_with_tables'
             }
         except Exception as e:
             raise ValueError(f"Failed to extract DOCX: {str(e)}")

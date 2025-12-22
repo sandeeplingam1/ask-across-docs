@@ -69,6 +69,50 @@ class DocumentWorker:
         logger.info(f"Received signal {signum}, initiating graceful shutdown...")
         self.running = False
     
+    async def janitor_clean_stuck_leases(self):
+        """FIX 2: Janitor that cleans stuck leases every minute"""
+        try:
+            async with AsyncSessionLocal() as session:
+                from datetime import datetime, timedelta
+                now = datetime.utcnow()
+                ten_minutes_ago = now - timedelta(minutes=10)
+                
+                # Find stuck documents
+                query = select(Document).where(
+                    Document.status == "processing"
+                )
+                result = await session.execute(query)
+                processing_docs = result.scalars().all()
+                
+                reset_count = 0
+                for doc in processing_docs:
+                    should_reset = False
+                    reason = ""
+                    
+                    # Rule 1: Lease expired
+                    if doc.lease_expires_at and doc.lease_expires_at < now:
+                        should_reset = True
+                        reason = f"lease expired at {doc.lease_expires_at}"
+                    # Rule 2: Processing too long (>10 minutes)
+                    elif doc.processing_started_at and doc.processing_started_at < ten_minutes_ago:
+                        should_reset = True
+                        reason = f"processing started {doc.processing_started_at}, >10 min ago"
+                    
+                    if should_reset:
+                        logger.warning(f"🧹 Janitor: Resetting stuck doc {doc.filename} ({reason})")
+                        doc.status = "queued"
+                        doc.lease_expires_at = None
+                        doc.message_enqueued_at = None  # Allow re-triggering
+                        doc.processing_attempts = min(doc.processing_attempts + 1, doc.max_retries)
+                        reset_count += 1
+                
+                if reset_count > 0:
+                    await session.commit()
+                    logger.info(f"🧹 Janitor: Reset {reset_count} stuck documents")
+                    
+        except Exception as e:
+            logger.error(f"Janitor error: {e}", exc_info=True)
+    
     async def recover_expired_leases(self):
         """Find and release expired leases for automatic retry"""
         try:
@@ -135,6 +179,13 @@ class DocumentWorker:
                     "error": error_message[:1000] if error_message else None
                 }
             )
+            
+            # FIX 1: Clear the "message in queue" flag when worker finishes
+            doc = await session.get(Document, document_id)
+            if doc:
+                doc.message_enqueued_at = None
+                logger.debug(f"Cleared message_enqueued_at flag for {document_id}")
+            
             await session.commit()
         except Exception as e:
             logger.error(f"Failed to release lease for {document_id}: {e}")
@@ -145,12 +196,34 @@ class DocumentWorker:
         filename = document.filename
         lease_acquired = False
         
+        logger.info(f"🔴 ENTERED process_document() for {filename} (doc_id={doc_id})")
+        
         try:
-            # CRITICAL: Acquire lease FIRST (atomic operation)
-            lease_acquired = await self.acquire_lease(session, doc_id)
+            import time
+            start_time = time.time()
+            
+            logger.info(f"🟡 DOC {doc_id}: About to acquire lease...")
+            
+            # CRITICAL: Acquire lease with TIMEOUT
+            try:
+                lease_acquired = await asyncio.wait_for(
+                    self.acquire_lease(session, doc_id),
+                    timeout=10.0
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"❌ LEASE ACQUISITION TIMED OUT (10s) for {filename} - DB HANG CONFIRMED")
+                return "SKIP_COMPLETE"
+            
             if not lease_acquired:
-                logger.warning(f"Could not acquire lease for {filename} - skipping (may be at max retries or already processing)")
-                return False
+                logger.info(f"⏸️  Lease NOT acquired for {filename} - document likely already being processed by another worker or at max retries. COMPLETING message (not retrying).")
+                # COMPLETE MESSAGE: DB lease failure is NOT a transient error - it means:
+                # 1. Another worker is actively processing this document (valid lease)
+                # 2. OR document has hit max retry attempts
+                # Retrying the message won't help and causes infinite retry loops.
+                # Completing the message releases it from the queue properly.
+                return "SKIP_COMPLETE"
+            
+            logger.info(f"🟡 DOC {doc_id}: LEASE ACQUIRED (%.1fs)", time.time() - start_time)
             
             # Refresh document to get updated values
             await session.refresh(document)
@@ -161,17 +234,20 @@ class DocumentWorker:
             await session.commit()
             
             # Download file
-            logger.debug(f"Downloading {filename} from storage")
+            phase_start = time.time()
+            logger.info(f"🟡 DOC {doc_id}: DOWNLOADING file from storage")
             file_content = await asyncio.wait_for(
                 self.file_storage.get_file(document.file_path),
                 timeout=60.0
             )
+            logger.info(f"🟡 DOC {doc_id}: DOWNLOAD DONE (%.1fs, %d bytes)", time.time() - phase_start, len(file_content))
             
             # Extract text
             document.progress = 25
             await session.commit()
-            logger.debug(f"Extracting text from {filename}")
             
+            phase_start = time.time()
+            logger.info(f"🟡 DOC {doc_id}: OCR/EXTRACTION START")
             extraction_result = await asyncio.wait_for(
                 asyncio.to_thread(
                     self.doc_processor.extract_with_metadata,
@@ -180,6 +256,7 @@ class DocumentWorker:
                 ),
                 timeout=120.0
             )
+            logger.info(f"🟡 DOC {doc_id}: OCR/EXTRACTION DONE (%.1fs)", time.time() - phase_start)
             
             text = extraction_result['text']
             pages_info = extraction_result['pages']
@@ -187,11 +264,10 @@ class DocumentWorker:
             if not text.strip():
                 raise ValueError("No text extracted from document")
             
-            # Chunk text
-            document.progress = 50
-            await session.commit()
-            logger.debug(f"Chunking {filename}")
+            logger.info(f"🟡 DOC {doc_id}: EXTRACTED %d chars", len(text))
             
+            phase_start = time.time()
+            logger.info(f"🟡 DOC {doc_id}: CHUNKING START")
             chunks = self.doc_processor.chunk_text(
                 text,
                 metadata={
@@ -201,25 +277,27 @@ class DocumentWorker:
                 },
                 pages_info=pages_info
             )
+            logger.info(f"🟡 DOC {doc_id}: CHUNKING DONE (%.1fs, %d chunks)", time.time() - phase_start, len(chunks))
             
             logger.info(f"Created {len(chunks)} chunks for {filename}")
             
             # Generate embeddings
             document.progress = 70
             await session.commit()
-            logger.debug(f"Generating embeddings for {len(chunks)} chunks")
             
+            phase_start = time.time()
+            logger.info(f"🟡 DOC {doc_id}: EMBEDDINGS START ({len(chunks)} chunks)")
             chunk_texts = [chunk["text"] for chunk in chunks]
             embeddings = await asyncio.wait_for(
                 self.embedding_service.embed_batch(chunk_texts),
                 timeout=180.0
             )
+            logger.info(f"🟡 DOC {doc_id}: EMBEDDINGS DONE (%.1fs)", time.time() - phase_start)
             
             # Store in vector database
-            document.progress = 90
-            await session.commit()
-            logger.debug(f"Indexing {filename} in vector store")
             
+            phase_start = time.time()
+            logger.info(f"🟡 DOC {doc_id}: VECTOR STORE START")
             await asyncio.wait_for(
                 self.vector_store.add_documents(
                     engagement_id=document.engagement_id,
@@ -229,6 +307,7 @@ class DocumentWorker:
                 ),
                 timeout=60.0
             )
+            logger.info(f"🟡 DOC {doc_id}: VECTOR STORE DONE (%.1fs)", time.time() - phase_start)
             
             # Update chunk count
             document.chunk_count = len(chunks)
@@ -240,6 +319,8 @@ class DocumentWorker:
             
             # Refresh to see final status
             await session.refresh(document)
+            total_time = time.time() - start_time
+            logger.info(f"🟢 DOC {doc_id}: COMPLETED {filename} - {len(chunks)} chunks - %.1fs total", total_time)
             logger.info(f"✅ Completed {filename} - {len(chunks)} chunks indexed - Status: {document.status}")
             return True
             
@@ -388,7 +469,7 @@ class DocumentWorker:
                         # Process the document
                         logger.info(f"🚀 Starting process_document for {document.filename}...")
                         success = await self.process_document(document, session)
-                        logger.info(f"{'✅' if success else '❌'} process_document returned success={success} for {document.filename}")
+                        logger.info(f"{'✅' if success == True else '❌' if success == False else '⏭️'} process_document returned success={success} for {document.filename}")
                         
                         # Stop lock renewal
                         if renewal_task:
@@ -398,15 +479,21 @@ class DocumentWorker:
                             except asyncio.CancelledError:
                                 pass
                         
-                        if success:
+                        if success is True:
                             processed += 1
                             # Complete message (remove from queue)
                             if receiver and message:
                                 self.service_bus.complete_message(message, receiver)
                                 logger.info(f"✅ Completed processing and removed message for {document.filename}")
+                        elif success == "SKIP_COMPLETE":
+                            # Lease collision - another worker is processing, complete message to prevent retry loop
+                            logger.info(f"⏭️  Skipping {document.filename} (lease held elsewhere), completing message to prevent duplicate processing")
+                            if receiver and message:
+                                self.service_bus.complete_message(message, receiver)
+                            # Don't count as processed or failed - another worker has it
                         else:
                             failed += 1
-                            # Abandon message for retry
+                            # Abandon message for retry (genuine processing failure)
                             if receiver and message:
                                 self.service_bus.abandon_message(message, receiver)
                                 logger.warning(f"❌ Failed processing, message abandoned for retry: {document.filename}")
@@ -445,6 +532,18 @@ class DocumentWorker:
             logger.error(f"Full traceback: {traceback.format_exc()}")
             return 0
     
+    async def janitor_loop(self):
+        """FIX 2: Janitor background task that runs every 1 minute to clean stuck leases"""
+        logger.info("🧹 Janitor loop started (runs every 60 seconds)")
+        
+        while self.running:
+            try:
+                await asyncio.sleep(60)  # 1 minute
+                if self.running:
+                    await self.janitor_clean_stuck_leases()
+            except Exception as e:
+                logger.error(f"Janitor loop error: {e}", exc_info=True)
+    
     async def lease_recovery_loop(self):
         """Background task to recover expired leases every 5 minutes"""
         logger.info("Lease recovery loop started (runs every 5 minutes)")
@@ -472,8 +571,9 @@ class DocumentWorker:
         # Recover expired leases on startup
         await self.recover_expired_leases()
         
-        # Start background lease recovery task
+        # Start background tasks
         recovery_task = asyncio.create_task(self.lease_recovery_loop())
+        janitor_task = asyncio.create_task(self.janitor_loop())  # FIX 2: Janitor every 1 minute
         
         if self.service_bus:
             logger.info("📋 Worker ready - listening for Service Bus messages (instant processing)...")

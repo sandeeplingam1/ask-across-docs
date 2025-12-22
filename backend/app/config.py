@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     azure_storage_connection_string: str | None = None
     azure_storage_container_name: str = "audit-documents"
     
+    # Azure Document Intelligence (AI-First extraction)
+    azure_document_intelligence_endpoint: str | None = None
+    azure_document_intelligence_key: str | None = None
+    use_document_intelligence: bool = True  # Use AI extraction when available
+    
     # Application
     backend_cors_origins: str = "http://localhost:5173,http://localhost:3000"
     max_upload_size_mb: int = 100

@@ -50,6 +50,7 @@ class Document(Base):
     processing_attempts = Column(Integer, default=0)
     max_retries = Column(Integer, default=3)
     last_error = Column(Text, nullable=True)
+    message_enqueued_at = Column(DateTime, nullable=True)  # Track if message already in Service Bus queue
 
 
 class QuestionAnswer(Base):

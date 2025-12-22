@@ -228,17 +228,29 @@ async def reset_stuck_documents(
     """Reset documents stuck in processing status back to queued"""
     from datetime import datetime, timedelta
     
-    # Find documents stuck in processing for more than 5 minutes
-    five_minutes_ago = datetime.utcnow() - timedelta(minutes=5)
+    # Find documents stuck in processing:
+    # 1. Lease has expired (lease_expires_at < now)
+    # 2. OR processing_started_at > 10 minutes ago (catch-all for orphaned docs)
+    now = datetime.utcnow()
+    ten_minutes_ago = now - timedelta(minutes=10)
     
     query = select(Document).where(
         Document.engagement_id == engagement_id,
-        Document.status == "processing",
-        Document.updated_at < five_minutes_ago
+        Document.status == "processing"
     )
     
     result = await session.execute(query)
-    stuck_docs = result.scalars().all()
+    processing_docs = result.scalars().all()
+    
+    stuck_docs = []
+    for doc in processing_docs:
+        # Check if lease expired or processing too long
+        if doc.lease_expires_at and doc.lease_expires_at < now:
+            stuck_docs.append(doc)
+            logger.info(f"Found stuck doc (expired lease): {doc.filename}, lease expired at {doc.lease_expires_at}")
+        elif doc.processing_started_at and doc.processing_started_at < ten_minutes_ago:
+            stuck_docs.append(doc)
+            logger.info(f"Found stuck doc (processing > 10min): {doc.filename}, started at {doc.processing_started_at}")
     
     if not stuck_docs:
         return {
@@ -246,12 +258,16 @@ async def reset_stuck_documents(
             "reset_count": 0
         }
     
-    # Reset them to queued
+    # Reset them to queued AND reset retry counter
     for doc in stuck_docs:
         doc.status = "queued"
         doc.progress = 0
         doc.error_message = "Reset from stuck processing state"
-        logger.info(f"Reset stuck document {doc.id} ({doc.filename}) to queued")
+        doc.processing_attempts = 0  # Reset retry counter to allow reprocessing
+        doc.last_error = None
+        doc.lease_expires_at = None  # Clear the lease
+        doc.message_enqueued_at = None  # FIX 1: Clear message flag so trigger can resend
+        logger.info(f"Reset stuck document {doc.id} ({doc.filename}) to queued with retry counter reset")
     
     await session.commit()
     
@@ -259,6 +275,29 @@ async def reset_stuck_documents(
         "message": f"Reset {len(stuck_docs)} stuck documents",
         "reset_count": len(stuck_docs),
         "documents": [{"id": doc.id, "filename": doc.filename} for doc in stuck_docs]
+    }
+
+
+@router.post("/reset-retries", status_code=200)
+async def reset_retry_counters(
+    engagement_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    """Reset retry counters for all queued/processing documents to allow reprocessing"""
+    from sqlalchemy import update
+    
+    # Reset retry counter for all queued and processing documents
+    result = await session.execute(
+        update(Document)
+        .where(Document.engagement_id == engagement_id)
+        .where(Document.status.in_(["queued", "processing"]))
+        .values(processing_attempts=0, last_error=None)
+    )
+    await session.commit()
+    
+    return {
+        "message": f"Reset retry counters for {result.rowcount} documents",
+        "reset_count": result.rowcount
     }
 
 
@@ -353,19 +392,20 @@ async def trigger_processing(
     if not service_bus:
         raise HTTPException(status_code=503, detail="Service Bus not configured")
     
-    # Find all queued documents
+    # Find all queued documents that DON'T already have a message in queue
     result = await session.execute(
         select(Document).where(
             Document.engagement_id == engagement_id,
-            Document.status == 'queued'
+            Document.status == 'queued',
+            Document.message_enqueued_at == None  # FIX 1: No duplicate tickets!
         )
     )
     queued_docs = result.scalars().all()
     
     if not queued_docs:
-        return {"message": "No queued documents found", "triggered_count": 0}
+        return {"message": "No queued documents found (all already have messages)", "triggered_count": 0}
     
-    logger.info(f"Found {len(queued_docs)} queued documents")
+    logger.info(f"Found {len(queued_docs)} queued documents without messages")
     
     triggered_count = 0
     failed_count = 0
@@ -374,11 +414,15 @@ async def trigger_processing(
     for doc in queued_docs:
         try:
             await service_bus.send_document_message(str(doc.engagement_id), str(doc.id))
+            # Mark that we sent a message (prevent duplicate tickets)
+            doc.message_enqueued_at = datetime.utcnow()
             triggered_count += 1
             logger.info(f"✅ Triggered processing: {doc.filename}")
         except Exception as e:
             failed_count += 1
             logger.error(f"❌ Failed to trigger {doc.filename}: {e}")
+    
+    await session.commit()  # Save the message_enqueued_at timestamps
     
     return {
         "message": f"Triggered processing for {triggered_count} documents",
