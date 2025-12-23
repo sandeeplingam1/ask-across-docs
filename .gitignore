@@ -30,3 +30,10 @@ data/
 
 # Deployment outputs
 deployment-outputs.json
+
+# Sensitive files
+.env.production
+.env.*.production
+infrastructure/deployment-outputs.json
+*-outputs.json
+GITHUB_SECRETS_SETUP.md
